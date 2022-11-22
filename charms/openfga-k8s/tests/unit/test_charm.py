@@ -1,4 +1,4 @@
-# Copyright 2022 Ales Stimec
+# Copyright 2022 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
@@ -70,7 +70,7 @@ class TestCharm(unittest.TestCase):
                         "override": "merge",
                         "startup": "disabled",
                         "summary": "OpenFGA",
-                        "command": "/root/openfga run",
+                        "command": "/openfga run",
                         "environment": {
                             "OPENFGA_AUTHN_METHOD": "preshared",
                             "OPENFGA_AUTHN_OIDC_AUDIENCE": "test-audience",

@@ -37,8 +37,8 @@ RUN --mount=type=ssh source /root/.gvm/scripts/gvm && go build -o openfga -race 
 # Define a smaller single process image for deployment
 FROM ${DOCKER_REGISTRY}ubuntu:20.04 AS deploy-env
 RUN apt-get -qq update && apt-get -qq install -y ca-certificates postgresql-client
-WORKDIR /root/
-COPY --from=build-with-github-auth /usr/src/openfga/openfga .
-COPY --from=build-with-github-auth /usr/src/openfga/assets .
+WORKDIR /
+COPY --from=build-with-github-auth /usr/src/openfga/openfga /openfga
+COPY --from=build-with-github-auth /usr/src/openfga/assets /assets
 ENTRYPOINT [ "./openfga" ]
 

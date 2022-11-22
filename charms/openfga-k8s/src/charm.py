@@ -83,20 +83,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @log_event_handler
     def _on_openfga_pebble_ready(self, event):
-        if not self.unit.is_leader():
-            return
-
-        openfga_relation = self.model.get_relation("openfga")
-        if not openfga_relation:
-            return
-
-        if "token" in openfga_relation.data[self.app]:
-            # if token is already set
-            # there is nothing to do.
-            return
-
-        token = secrets.token_urlsafe(32)
-        openfga_relation.data[self.app].update({"token": token})
         self._update_workload(event)
 
     @log_event_handler
@@ -105,6 +91,20 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @log_event_handler
     def _on_leader_elected(self, event):
+        if not self.unit.is_leader():
+            return
+
+        openfga_relation = self.model.get_relation("openfga")
+        if not openfga_relation:
+            event.defer()
+
+        if "token" in openfga_relation.data[self.app]:
+            # if token is already set
+            # there is nothing to do.
+            return
+
+        token = secrets.token_urlsafe(32)
+        openfga_relation.data[self.app].update({"token": token})
         self._update_workload(event)
 
     @log_event_handler
@@ -133,7 +133,7 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars = map_config_to_env_vars(self)
         if self._stored.db_uri:
             env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-            env_vars["OPENFGA_DATASTORE_URI"] = "postgres://{}".format(self._stored.db_uri)
+            env_vars["OPENFGA_DATASTORE_URI"] = self._stored.db_uri
 
         openfga_relation = self.model.get_relation("openfga")
         if openfga_relation and "token" in openfga_relation.data[self.app]:
@@ -149,7 +149,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga": {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": "/root/openfga run",
+                    "command": "/openfga run",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -278,7 +278,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         migration_process = container.exec(
             command=[
-                "/root/openfga",
+                "/openfga",
                 "migrate",
                 "--datastore-engine",
                 "postgres",
@@ -288,7 +288,7 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         stdout, stderr = migration_process.wait_output()
-        if stderr == "":
+        if stderr:
             self.unit.status = WaitingStatus("Schema migration done")
             event.set_results({"result": "done"})
         else:
