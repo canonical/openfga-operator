@@ -1,0 +1,55 @@
+# This file populates the Overview on Charmhub.
+# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
+
+# The charm package name, no spaces (required)
+# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
+name: openfga-k8s
+
+# The following metadata are human-readable and will be published prominently on Charmhub.
+
+# (Recommended)
+display-name: OpenFGA
+
+# (Required)
+summary: A high-performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar.
+
+description: |
+  A high-performance and flexible authorization/permission engine 
+  built for developers and inspired by Google Zanzibar.
+
+  OpenFGA is designed to make it easy for developers to model 
+  their application permissions and add and integrate fine-grained
+  authorization into their applications.
+
+  It allows in-memory data storage for quick development, as well 
+  as pluggable database modules. It currently supports PostgreSQL
+  and MySQL.
+
+  It offers an HTTP API and a gRPC API. It has SDKs for 
+  Node.js/JavaScript, GoLang, Python and .NET. Look in our
+  Community section for third-party SDKs and tools.
+
+peers:
+  openfga:
+    interface: openfga
+
+provides:
+  nrpe:
+    interface: nrpe-external-master
+
+requires:
+  ingress:
+    interface: ingress
+  db:
+    interface: pgsql
+    limit: 1
+
+containers:
+  openfga:
+    resource: openfga-image
+
+resources:
+  openfga-image:
+    type: oci-image
+    description: OCI image for OpenFGA
+    upstream-source: openfga/openfga
