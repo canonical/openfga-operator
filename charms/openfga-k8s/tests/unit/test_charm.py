@@ -3,13 +3,16 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import logging
 import pathlib
 import tempfile
 import unittest
-
-from ops.testing import Harness
+from unittest.mock import patch
 
 from charm import OpenFGAOperatorCharm
+from ops.testing import Harness
+
+logger = logging.getLogger(__name__)
 
 
 class TestCharm(unittest.TestCase):
@@ -22,21 +25,27 @@ class TestCharm(unittest.TestCase):
 
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
-        self.harness.charm.framework.charm_dir = pathlib.Path(self.tempdir.name)
+        self.harness.charm.framework.charm_dir = pathlib.Path(
+            self.tempdir.name
+        )
 
         self.harness.container_pebble_ready("openfga")
 
     def test_on_config_changed(self):
-        rel_id = self.harness.add_relation("openfga", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
         self.harness.set_leader(True)
+
+        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        self.harness.update_relation_data(
+            rel_id,
+            "openfga-k8s",
+            {"token": "test-token", "schema-migration-ran": "true"},
+        )
 
         self.harness.update_relation_data(
             rel_id,
             "openfga-k8s",
-            {
-                "token": "test-token",
-            },
+            {"db-uri": "test-db-uri"},
         )
 
         container = self.harness.model.unit.get_container("openfga")
@@ -45,14 +54,9 @@ class TestCharm(unittest.TestCase):
         self.harness.update_config(
             {
                 "log-level": "debug",
-                "authn-oidc-audience": "test-audience",
-                "authn-oidc-issuer": "test-issuer",
-                "changelog-horizon-offset": 15,
                 "dns-name": "test-dns-name",
                 "grpc-addr": "0.0.0.0:1234",
                 "http-addr": "0.0.0.0:1235",
-                "http-enabled": True,
-                "log-format": "test-log-format",
             }
         )
         self.harness.charm.on.config_changed.emit()
@@ -70,27 +74,72 @@ class TestCharm(unittest.TestCase):
                         "override": "merge",
                         "startup": "disabled",
                         "summary": "OpenFGA",
-                        "command": "/openfga run",
+                        "command": "/app/openfga run",
                         "environment": {
                             "OPENFGA_AUTHN_METHOD": "preshared",
-                            "OPENFGA_AUTHN_OIDC_AUDIENCE": "test-audience",
-                            "OPENFGA_AUTHN_OIDC_ISSUER": "test-issuer",
                             "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
-                            "OPENFGA_CHANGELOG_HORIZON_OFFSET": 15,
+                            "OPENFGA_DATASTORE_ENGINE": "postgres",
+                            "OPENFGA_DATASTORE_URI": "test-db-uri",
                             "OPENFGA_DNS_NAME": "test-dns-name",
                             "OPENFGA_GRPC_ADDR": "0.0.0.0:1234",
                             "OPENFGA_HTTP_ADDR": "0.0.0.0:1235",
-                            "OPENFGA_HTTP_ENABLED": True,
-                            "OPENFGA_HTTP_UPSTREAM_TIMEOUT": "5s",
-                            "OPENFGA_LIST_OBJECTS_DEADLINE": "3s",
-                            "OPENFGA_LIST_OBJECTS_MAX_RESULTS": 1000,
-                            "OPENFGA_LOG_FORMAT": "test-log-format",
                             "OPENFGA_LOG_LEVEL": "debug",
-                            "OPENFGA_MAX_TUPLES_PER_WRITE": 100,
-                            "OPENFGA_MAX_TYPES_PER_AUTHORIZATION_MODEL": 100,
-                            "OPENFGA_RESOLVE_NODE_LIMIT": 25,
+                            "OPENFGA_PLAYGROUND_ENABLED": "false",
                         },
-                    }
+                    },
                 }
             },
         )
+
+    @patch("charm.OpenFGAOperatorCharm.create_openfga_store")
+    @patch("charm.OpenFGAOperatorCharm.get_address")
+    def test_on_openfga_relation_joined(
+        self,
+        get_address,
+        create_openfga_store,
+    ):
+        create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
+        get_address.return_value = "10.10.0.17"
+
+        self.harness.set_leader(True)
+
+        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        self.harness.update_relation_data(
+            rel_id,
+            "openfga-k8s",
+            {
+                "token": "test-token",
+                "schema-migration-ran": "true",
+                "db-uri": "test-db-uri",
+            },
+        )
+
+        self.harness.update_config(
+            {
+                "log-level": "debug",
+                "dns-name": "test-dns-name",
+                "grpc-addr": "0.0.0.0:1234",
+                "http-addr": "0.0.0.0:1235",
+            }
+        )
+        self.harness.charm.on.config_changed.emit()
+
+        self.harness.enable_hooks()
+        rel_id = self.harness.add_relation("openfga", "openfga-client")
+        self.harness.add_relation_unit(rel_id, "openfga-client/0")
+
+        self.harness.update_relation_data(
+            rel_id,
+            "openfga-client",
+            {"store-name": "test-store-name"},
+        )
+
+        create_openfga_store.assert_called_with("test-store-name")
+        assert self.harness.get_relation_data(rel_id, "openfga-k8s") == {
+            "address": "10.10.0.17",
+            "port": "1235",
+            "scheme": "http",
+            "token": "test-token",
+            "store-id": "01GK13VYZK62Q1T0X55Q2BHYD6",
+        }

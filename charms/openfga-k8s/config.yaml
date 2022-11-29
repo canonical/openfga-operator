@@ -6,19 +6,6 @@ options:
       Acceptable values are: "info", "debug", "warning", "error" and "critical"
     default: "info"
     type: string
-  authn-oidc-audience:
-    description: |
-      The OIDC audience of the tokens being signed by the authorization server.
-    type: string
-  authn-oidc-issuer:
-    description: |
-      The OIDC issuer (authorization server) signing the token.
-    type: string
-  changelog-horizon-offset:
-    description: |
-      The offset (in minutes) from the current time. Changes that occur after 
-      this offset will not be included in the response of ReadChanges.
-    type: int
   dns-name:
     description: |
       Public DNS hostname that OpenFGA is being served from.
@@ -28,86 +15,8 @@ options:
       The host:port address to serve the grpc server on.
     type: string
     default: 0.0.0.0:8081
-  grpc-tls-cert:
-    description: |
-      The (absolute) file path of the certificate to use for the TLS connection.
-    type: string
-  grpc-tls-enabled:
-    description: |
-      Enable/disable transport layer security (TLS).
-    type: boolean
-  grpc-tls-key:
-    description: |
-      The (absolute) file path of the TLS key that should be used for the TLS connection.
-    type: string
   http-addr:
     description: |
       The host:port address to serve the HTTP server on.
     type: string
     default: 0.0.0.0:8080
-  http-cors-allowed-headers:
-    description: |
-      Specifies the CORS allowed headers.
-    type: string
-  http-cors-allowed-origins:
-    description: |
-      Specifies the CORS allowed origins.
-    type: string
-  http-enabled:
-    description: |
-      Enable/disable the OpenFGA HTTP server.
-    type: boolean
-    default: True
-  http-tls-cert:
-    description: |
-      The (absolute) file path of the certificate to use for the TLS connection.
-    type: string
-  http-tls-enabled:
-    description: |
-      Enable/disable transport layer security (TLS).
-    type: boolean
-    default: False
-  http-tls-key:
-    description: |
-      The (absolute) file path of the TLS key that should be used for the TLS connection.
-    type: string
-  http-upstream-timeout:
-    description: |
-      The timeout duration for proxying HTTP requests upstream to the grpc endpoint.
-    type: string
-    default: 5s
-  list-objects-deadline:
-    description: |
-      The timeout deadline for serving ListObjects requests.
-    type: string
-    default: 3s
-  list-objects-max-results:
-    description: |
-      The maximum results to return in ListObjects responses.
-    type: int
-    default: 1000
-  log-format:
-    description: |
-      The log format to output logs in.
-    type: string
-    default: text
-  max-tuples-per-write:
-    description: |
-      The maximum allowed number of tuples per Write transaction.
-    type: int
-    default: 100
-  max-types-per-authorization-model:
-    description: |
-      The maximum allowed number of type definitions per authorization modules.
-    type: int
-    default: 100
-  profiler-enabled:
-    description: |
-      Enable/disable pprof profiling.
-    type: boolean
-    default: False
-  resolve-node-limit:
-    description: |
-      Defines how deeply nested an authorization model can be.
-    type: int
-    default: 25

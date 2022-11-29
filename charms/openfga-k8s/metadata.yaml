@@ -30,18 +30,18 @@ description: |
   Community section for third-party SDKs and tools.
 
 peers:
-  openfga:
-    interface: openfga
+  openfga-peer:
+    interface: openfga-peer
 
 provides:
-  nrpe:
-    interface: nrpe-external-master
+  openfga:
+    interface: openfga
 
 requires:
   ingress:
     interface: ingress
-  db:
-    interface: pgsql
+  database:
+    interface: postgresql_client
     limit: 1
 
 containers:
@@ -52,4 +52,3 @@ resources:
   openfga-image:
     type: oci-image
     description: OCI image for OpenFGA
-    upstream-source: openfga/openfga
