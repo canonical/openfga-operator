@@ -43,23 +43,23 @@ async def test_build_and_deploy(ops_test: OpsTest):
         ops_test.model.deploy(
             "postgresql-k8s", application_name="postgresql", channel="edge"
         ),
-        #        ops_test.model.deploy(
-        #            test_charm,
-        #            application_name="openfga-requires",
-        #            series="jammy",
-        #        ),
+        ops_test.model.deploy(
+            test_charm,
+            application_name="openfga-requires",
+            series="jammy",
+        ),
     )
 
     logger.debug("waiting for postgresql")
     await ops_test.model.wait_for_idle(
-        apps=["postgresql"],
+        apps=["postgresql", "openfga-requires"],
         status="active",
         raise_on_blocked=True,
         timeout=1000,
     )
 
     logger.debug("adding postgresql relation")
-    await ops_test.model.relate(APP_NAME, "postgresql:db")
+    await ops_test.model.relate(APP_NAME, "postgresql:database")
 
     logger.debug("setting dns-name")
     await ops_test.model.applications[APP_NAME].set_config(
@@ -91,18 +91,18 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
-    # await ops_test.model.relate(APP_NAME, "openfga-requires")
+    await ops_test.model.relate(APP_NAME, "openfga-requires")
 
-    # async with ops_test.fast_forward():
-    #    await ops_test.model.wait_for_idle(
-    #        apps=["openfga-requires"],
-    #        status="active",
-    #        timeout=60,
-    #    )
+    async with ops_test.fast_forward():
+        await ops_test.model.wait_for_idle(
+            apps=["openfga-requires"],
+            status="active",
+            timeout=60,
+        )
 
-
-#
-# assert (
-#    "running with store"
-#    in ops_test.model.units["openfga-requires/0"].status
-# )
+    openfga_requires_unit = await utils.get_unit_by_name(
+        "openfga-requires", "0", ops_test.model.units
+    )
+    assert (
+        "running with store" in openfga_requires_unit.workload_status_message
+    )

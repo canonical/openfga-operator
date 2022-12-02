@@ -5,6 +5,11 @@ type: charm
 parts:
   charm:
     charm-python-packages: [setuptools]
+    build-packages:
+      - libffi-dev
+      - libssl-dev
+      - rustc
+      - cargo
 bases:
   - build-on:
       - name: ubuntu

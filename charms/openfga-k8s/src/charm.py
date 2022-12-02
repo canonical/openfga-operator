@@ -24,9 +24,16 @@ from charms.data_platform_libs.v0.database_requires import (
     DatabaseRequires,
 )
 from charms.nginx_ingress_integrator.v0.ingress import IngressRequires
-from ops.charm import CharmBase, RelationChangedEvent
+from charms.tls_certificates_interface.v1.tls_certificates import (
+    CertificateAvailableEvent,
+    CertificateExpiringEvent,
+    TLSCertificatesRequiresV1,
+    generate_csr,
+    generate_private_key,
+)
+from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, ModelError, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
 
@@ -54,6 +61,22 @@ class OpenFGAOperatorCharm(CharmBase):
             self.on.openfga_relation_changed, self._on_openfga_relation_changed
         )
 
+        # certificates
+        self.cert_subject = "openfga"
+        self.certificates = TLSCertificatesRequiresV1(self, "certificates")
+        self.framework.observe(
+            self.on.certificates_relation_joined,
+            self._on_certificates_relation_joined,
+        )
+        self.framework.observe(
+            self.certificates.on.certificate_available,
+            self._on_certificate_available,
+        )
+        self.framework.observe(
+            self.certificates.on.certificate_expiring,
+            self._on_certificate_expiring,
+        )
+
         # Actions
         self.framework.observe(
             self.on.schema_upgrade_action, self.on_schema_upgrade_action
@@ -65,7 +88,7 @@ class OpenFGAOperatorCharm(CharmBase):
             {
                 "service-hostname": self.config.get("dns-name", ""),
                 "service-name": self.app.name,
-                "service-port": 8080,
+                "service-port": self.config.get("http-addr").rsplit(":", 1)[1],
             },
         )
 
@@ -107,17 +130,26 @@ class OpenFGAOperatorCharm(CharmBase):
         if not self.unit.is_leader():
             return
 
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if not openfga_relation:
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
+            self.unit.status = WaitingStatus(
+                "Waiting for peer relation to be created"
+            )
             event.defer()
-
-        if "token" in openfga_relation.data[self.app]:
-            # if token is already set
-            # there is nothing to do.
             return
 
-        token = secrets.token_urlsafe(32)
-        openfga_relation.data[self.app].update({"token": token})
+        if "token" not in peer_relation.data[self.app]:
+            token = secrets.token_urlsafe(32)
+            peer_relation.data[self.app].update({"token": token})
+
+        if "private-key-password" not in peer_relation.data[self.app]:
+            private_key: bytes = generate_private_key(key_size=4095)
+            peer_relation.data[self.app].update(
+                {
+                    "private-key": private_key.decode(),
+                }
+            )
+
         self._update_workload(event)
 
     def _update_workload(self, event):
@@ -125,9 +157,7 @@ class OpenFGAOperatorCharm(CharmBase):
         data."""
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if not container.can_connect():
-            logger.info(
-                "cannot connect to the workload container - deferring the event"
-            )
+            logger.info("cannot connect to the openfga container")
             event.defer()
             return
 
@@ -144,7 +174,10 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self.ingress.update_config(
-            {"service-hostname": self.config.get("dns-name", "")}
+            {
+                "service-hostname": self.config.get("dns-name", ""),
+                "service-port": self.config.get("http-addr").rsplit(":", 1)[1],
+            }
         )
 
         env_vars = map_config_to_env_vars(self)
@@ -158,6 +191,15 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = peer_relation.data[
                 self.app
             ].get("token")
+
+        if peer_relation and "certificate" in peer_relation.data[self.app]:
+            certificate = peer_relation.data[self.app].get("certificate")
+            key = peer_relation.data[self.app].get("private-key")
+            container.push("/app/certificate.pem", certificate)
+            container.push("/app/key.pem", key)
+            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_HTTP_TLS_CERT"] = "/app/certificate.pem"
+            env_vars["OPENFGA_HTTP_TLS_KEY"] = "/app/key.pem"
 
         env_vars = {key: value for key, value in env_vars.items() if value}
         for setting in REQUIRED_SETTINGS:
@@ -199,6 +241,7 @@ class OpenFGAOperatorCharm(CharmBase):
         else:
             logger.info("workload container not ready - deferring")
             event.defer()
+            return
 
     def _on_database_event(self, event: DatabaseEvent) -> None:
         # Handles the created database
@@ -261,12 +304,16 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         token = ""
+        ca = ""
+        chain = ""
         peer_relation = self.model.get_relation("openfga-peer")
-        if peer_relation and "token" in peer_relation.data[self.app]:
-            token = peer_relation.data[self.app].get("token")
-        else:
+        if not peer_relation:
             event.defer()
             return
+
+        if "token" in peer_relation.data[self.app]:
+            token = peer_relation.data[self.app].get("token")
+
         store_name = event.relation.data[event.app].get("store-name", "")
         if not store_name:
             return
@@ -298,10 +345,10 @@ class OpenFGAOperatorCharm(CharmBase):
 
         headers = {}
 
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if openfga_relation:
-            if "token" in openfga_relation.data[self.app]:
-                api_token = openfga_relation.data[self.app].get("token")
+        peer_relation = self.model.get_relation("openfga-peer")
+        if peer_relation:
+            if "token" in peer_relation.data[self.app]:
+                api_token = peer_relation.data[self.app].get("token")
                 headers = {"Authorization": "Bearer {}".format(api_token)}
 
         # we need to check if the store with the specified name already
@@ -322,16 +369,19 @@ class OpenFGAOperatorCharm(CharmBase):
             "{}/stores".format(address),
             json={"name": store_name},
             headers=headers,
+            verify=False,
         )
-        if response.status_code != 200:
-            logger.error(
-                "failed to create the openfga store: {}".format(
-                    response.json()
-                )
+        if response.status_code == 200 or response.status_code == 201:
+            data = response.json()
+            return data["id"]
+
+        logger.error(
+            "failed to create the openfga store: {} {}".format(
+                response.status_code,
+                response.json(),
             )
-            return ""
-        data = response.json()
-        return data["id"]
+        )
+        return ""
 
     def list_stores(
         self, openfga_host: str, headers, continuation_token=""
@@ -339,6 +389,7 @@ class OpenFGAOperatorCharm(CharmBase):
         response: Response = requests.get(
             "{}/stores".format(openfga_host),
             headers=headers,
+            verify=False,
         )
         if response.status_code != 200:
             logger.error(
@@ -372,8 +423,8 @@ class OpenFGAOperatorCharm(CharmBase):
             event.set_results({"error": "unit is not the leader"})
             return
 
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if not openfga_relation:
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
             event.set_results({"error": "waiting for peer relation"})
             return
 
@@ -422,67 +473,105 @@ class OpenFGAOperatorCharm(CharmBase):
                     {"std-err": e.stderr, "std-out": stdout, "db_uri": db_uri}
                 )
 
-        if "schema-migration-ran" in openfga_relation.data[self.app]:
-            return
-
-        openfga_relation.data[self.app].update(
-            {"schema-migration-ran": "true"}
-        )
+        peer_relation.data[self.app].update({"schema-migration-ran": "true"})
 
         logger.info("schema upgraded")
         self._update_workload(event)
 
     def schema_upgraded(self):
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if not openfga_relation:
-            logger.debug("schema-upgraded: no openfga relation")
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
             return False
 
-        if "schema-migration-ran" in openfga_relation.data[self.app]:
+        if "schema-migration-ran" in peer_relation.data[self.app]:
             logger.debug(
                 "schema-upgraded: peer relation data contains schema-migration-ran"
             )
             return True
 
-        logger.debug(
-            "schema-upgraded: peer relation data does not contain schema-migration-ran"
-        )
         return False
 
     def set_db_uri(self, db_uri):
         if not self.unit.is_leader():
             return
 
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if openfga_relation:
-            openfga_relation.data[self.app].update({"db-uri": db_uri})
+        peer_relation = self.model.get_relation("openfga-peer")
+        if peer_relation:
+            peer_relation.data[self.app].update({"db-uri": db_uri})
 
     def get_db_uri(self):
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if not openfga_relation:
-            return ""
-
-        if self.app in openfga_relation.data:
-            db_uri = openfga_relation.data[self.app].get("db-uri", "")
+        peer_relation = self.model.get_relation("openfga-peer")
+        if peer_relation and self.app in peer_relation.data:
+            db_uri = peer_relation.data[self.app].get("db-uri", "")
             return db_uri
         return ""
 
-    def set_app_store(self, appName: str, storeName: str):
+    def _on_certificates_relation_joined(
+        self, event: RelationJoinedEvent
+    ) -> None:
         if not self.unit.is_leader():
             return
 
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if openfga_relation:
-            openfga_relation.data[self.app].update({appName: storeName})
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
+            self.unit.status = WaitingStatus(
+                "Waiting for peer relation to be created"
+            )
+            event.defer()
+            return
 
-    def get_app_store(self, appName: str) -> str:
+        private_key = peer_relation.data[self.app].get("private-key")
+        csr = generate_csr(
+            private_key=private_key.encode(),
+            subject=self.config.get("dns-name", self.cert_subject),
+        )
+        peer_relation.data[self.app].update({"csr": csr.decode()})
+        self.certificates.request_certificate_creation(
+            certificate_signing_request=csr
+        )
+
+    def _on_certificate_available(
+        self, event: CertificateAvailableEvent
+    ) -> None:
         if not self.unit.is_leader():
-            return ""
-        openfga_relation = self.model.get_relation("openfga-peer")
-        if not openfga_relation:
-            return ""
+            return
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
+            self.unit.status = WaitingStatus(
+                "Waiting for peer relation to be created"
+            )
+            event.defer()
+            return
 
-        return openfga_relation.data[self.app].get(appName, "")
+        peer_relation.data[self.app].update({"certificate": event.certificate})
+        peer_relation.data[self.app].update({"ca": event.ca})
+        peer_relation.data[self.app].update({"chain": event.chain})
+        self.unit.status = ActiveStatus()
+
+    def _on_certificate_expiring(
+        self, event: CertificateExpiringEvent
+    ) -> None:
+        if not self.unit.is_leader():
+            return
+        peer_relation = self.model.get_relation("openfga-peer")
+        if not peer_relation:
+            self.unit.status = WaitingStatus(
+                "Waiting for peer relation to be created"
+            )
+            event.defer()
+            return
+        old_csr = peer_relation.data[self.app].get("csr")
+
+        private_key = peer_relation.data[self.app].get("private-key")
+        new_csr = generate_csr(
+            private_key=private_key.encode(),
+            subject=self.config.get("dns-name", self.cert_subject),
+        )
+        self.certificates.request_certificate_renewal(
+            old_certificate_signing_request=old_csr,
+            new_certificate_signing_request=new_csr,
+        )
+        peer_relation.data[self.app].update({"csr": new_csr.decode()})
 
 
 def map_config_to_env_vars(charm, **additional_env):
