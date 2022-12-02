@@ -13,6 +13,13 @@ display-name: OpenFGA
 # (Required)
 summary: A high-performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar.
 
+maintiners:
+  - JAAS Crew (jaas-crew@lists.canonical.com)
+
+website: https://github.com/canonical/cs-openfga
+source: https://github.com/canonical/cs-openfga
+issues: https://github.com/canonical/cs-openfga/issues
+
 description: |
   A high-performance and flexible authorization/permission engine 
   built for developers and inspired by Google Zanzibar.
@@ -40,6 +47,7 @@ provides:
 requires:
   ingress:
     interface: ingress
+    limit: 1
   database:
     interface: postgresql_client
     limit: 1

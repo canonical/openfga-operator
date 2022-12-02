@@ -61,11 +61,6 @@ async def test_build_and_deploy(ops_test: OpsTest):
     logger.debug("adding postgresql relation")
     await ops_test.model.relate(APP_NAME, "postgresql:database")
 
-    logger.debug("setting dns-name")
-    await ops_test.model.applications[APP_NAME].set_config(
-        {"dns-name": "test-dns-name"}
-    )
-
     logger.debug("running schema-upgrade action")
     openfga_unit = await utils.get_unit_by_name(
         APP_NAME, "0", ops_test.model.units

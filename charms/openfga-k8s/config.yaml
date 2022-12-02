@@ -6,17 +6,3 @@ options:
       Acceptable values are: "info", "debug", "warning", "error" and "critical"
     default: "info"
     type: string
-  dns-name:
-    description: |
-      Public DNS hostname that OpenFGA is being served from.
-    type: string
-  grpc-addr:
-    description: |
-      The host:port address to serve the grpc server on.
-    type: string
-    default: 0.0.0.0:8081
-  http-addr:
-    description: |
-      The host:port address to serve the HTTP server on.
-    type: string
-    default: 0.0.0.0:8080

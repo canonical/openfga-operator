@@ -39,13 +39,15 @@ class TestCharm(unittest.TestCase):
         self.harness.update_relation_data(
             rel_id,
             "openfga-k8s",
-            {"token": "test-token", "schema-migration-ran": "true"},
-        )
-
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-k8s",
-            {"db-uri": "test-db-uri"},
+            {
+                "token": "test-token",
+                "schema-migration-ran": "true",
+                "db-uri": "test-db-uri",
+                "private-key": "test-key",
+                "certificate": "test-cert",
+                "ca": "test-ca",
+                "chain": "test-chain",
+            },
         )
 
         container = self.harness.model.unit.get_container("openfga")
@@ -54,9 +56,6 @@ class TestCharm(unittest.TestCase):
         self.harness.update_config(
             {
                 "log-level": "debug",
-                "dns-name": "test-dns-name",
-                "grpc-addr": "0.0.0.0:1234",
-                "http-addr": "0.0.0.0:1235",
             }
         )
         self.harness.charm.on.config_changed.emit()
@@ -80,9 +79,12 @@ class TestCharm(unittest.TestCase):
                             "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
                             "OPENFGA_DATASTORE_ENGINE": "postgres",
                             "OPENFGA_DATASTORE_URI": "test-db-uri",
-                            "OPENFGA_DNS_NAME": "test-dns-name",
-                            "OPENFGA_GRPC_ADDR": "0.0.0.0:1234",
-                            "OPENFGA_HTTP_ADDR": "0.0.0.0:1235",
+                            "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
+                            "OPENFGA_GRPC_TLS_ENABLED": "true",
+                            "OPENFGA_GRPC_TLS_KEY": "/app/key.pem",
+                            "OPENFGA_HTTP_TLS_CERT": "/app/certificate.pem",
+                            "OPENFGA_HTTP_TLS_ENABLED": "true",
+                            "OPENFGA_HTTP_TLS_KEY": "/app/key.pem",
                             "OPENFGA_LOG_LEVEL": "debug",
                             "OPENFGA_PLAYGROUND_ENABLED": "false",
                         },
@@ -118,9 +120,6 @@ class TestCharm(unittest.TestCase):
         self.harness.update_config(
             {
                 "log-level": "debug",
-                "dns-name": "test-dns-name",
-                "grpc-addr": "0.0.0.0:1234",
-                "http-addr": "0.0.0.0:1235",
             }
         )
         self.harness.charm.on.config_changed.emit()
@@ -138,8 +137,9 @@ class TestCharm(unittest.TestCase):
         create_openfga_store.assert_called_with("test-store-name")
         assert self.harness.get_relation_data(rel_id, "openfga-k8s") == {
             "address": "10.10.0.17",
-            "port": "1235",
+            "port": "8080",
             "scheme": "http",
             "token": "test-token",
             "store-id": "01GK13VYZK62Q1T0X55Q2BHYD6",
+            "dns-name": "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local",
         }
