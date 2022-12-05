@@ -1,0 +1,65 @@
+# This file populates the Overview on Charmhub.
+# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
+
+# The charm package name, no spaces (required)
+# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
+name: openfga-k8s
+
+# The following metadata are human-readable and will be published prominently on Charmhub.
+
+# (Recommended)
+display-name: OpenFGA
+
+# (Required)
+summary: A high-performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar.
+
+maintiners:
+  - JAAS Crew (jaas-crew@lists.canonical.com)
+
+website: https://github.com/canonical/cs-openfga
+source: https://github.com/canonical/cs-openfga
+issues: https://github.com/canonical/cs-openfga/issues
+
+description: |
+  A high-performance and flexible authorization/permission engine 
+  built for developers and inspired by Google Zanzibar.
+
+  OpenFGA is designed to make it easy for developers to model 
+  their application permissions and add and integrate fine-grained
+  authorization into their applications.
+
+  It allows in-memory data storage for quick development, as well 
+  as pluggable database modules. It currently supports PostgreSQL
+  and MySQL.
+
+  It offers an HTTP API and a gRPC API. It has SDKs for 
+  Node.js/JavaScript, GoLang, Python and .NET. Look in our
+  Community section for third-party SDKs and tools.
+
+peers:
+  openfga-peer:
+    interface: openfga-peer
+
+provides:
+  openfga:
+    interface: openfga
+
+requires:
+  ingress:
+    interface: ingress
+    limit: 1
+  database:
+    interface: postgresql_client
+    limit: 1
+  certificates:
+    interface: tls-certificates
+    limit: 1
+
+containers:
+  openfga:
+    resource: openfga-image
+
+resources:
+  openfga-image:
+    type: oci-image
+    description: OCI image for OpenFGA
