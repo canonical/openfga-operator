@@ -1,22 +1,56 @@
-"""TODO: Add a proper docstring here.
+"""# Interface Library for OpenFGA
 
-This is a placeholder docstring for this charm library. Docstrings are
-presented on Charmhub and updated whenever you push a new version of the
-library.
+This library wraps relation endpoints using the `openfga` interface
+and provides a Python API for requesting OpenFGA authorization model 
+stores to be created.
 
-Complete documentation about creating and documenting libraries can be found
-in the SDK docs at https://juju.is/docs/sdk/libraries.
+## Getting Started
 
-See `charmcraft publish-lib` and `charmcraft fetch-lib` for details of how to
-share and consume charm libraries. They serve to enhance collaboration
-between charmers. Use a charmer's libraries for classes that handle
-integration with their charm.
+To get started using the library, you just need to fetch the library using `charmcraft`.
 
-Bear in mind that new revisions of the different major API versions (v0, v1,
-v2 etc) are maintained independently.  You can continue to update v0 and v1
-after you have pushed v3.
+```shell
+cd some-charm
+charmcraft fetch-lib charms.openfga_k8s.v0.openfga
+```
 
-Markdown is supported, following the CommonMark specification.
+In the `metadata.yaml` of the charm, add the following:
+
+```yaml
+requires:
+  openfga:
+    interface: openfga
+```
+
+Then, to initialise the library:
+```python
+from charms.openfga_k8s.v0.openfga import (
+    OpenFGARequires,
+    OpenFGAStoreCreateEvent,
+)
+
+class SomeCharm(CharmBase):
+  def __init__(self, *args):
+    # ...
+    self.openfga = OpenFGARequires(self, "test-openfga-store")
+    self.framework.observe(
+        self.openfga.on.openfga_store_created,
+        self._on_openfga_store_created,
+    )
+
+    def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent):
+        if not self.unit.is_leader():
+            return
+
+        if not event.store_id:
+            return
+
+        logger.info("store id {}".format(event.store_id))
+        logger.info("token {}".format(event.token))
+        logger.info("address {}".format(event.address))
+        logger.info("port {}".format(event.port))
+        logger.info("scheme {}".format(event.scheme))
+```
+
 """
 
 import logging
