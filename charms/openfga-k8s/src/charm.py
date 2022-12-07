@@ -85,7 +85,6 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # Certificates relation
-        self.cert_subject = "openfga"
         self.certificates = TLSCertificatesRequiresV1(self, "certificates")
         self.framework.observe(
             self.on.certificates_relation_joined,
@@ -105,7 +104,9 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # Ingress relation
-        self.ingress = IngressPerAppRequirer(self, port=8080)
+        self.ingress = IngressPerAppRequirer(
+            self, relation_name="ingress", port=8080
+        )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(
             self.ingress.on.revoked, self._on_ingress_revoked
@@ -159,28 +160,24 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_leader_elected(self, event):
         """Leader elected."""
+        if self.unit.is_leader():
+            try:
+                # generate token if one is not present in the application
+                # data bucket of the peer relation
+                if not self.state.get(STATE_KEY_TOKEN):
+                    token = secrets.token_urlsafe(32)
+                    self.state.set(STATE_KEY_TOKEN, token)
 
-        if not self.unit.is_leader():
-            return
+                # generate the private key if one is not present in the
+                # application data bucket of the peer relation
+                if not self.state.get(STATE_KEY_PRIVATE_KEY):
+                    private_key: bytes = generate_private_key(key_size=4096)
+                    self.state.set(STATE_KEY_PRIVATE_KEY, private_key.decode())
 
-        try:
-            # generate token if one is not present in the application
-            # data bucket of the peer relation
-            if not self.state.get(STATE_KEY_TOKEN):
-                token = secrets.token_urlsafe(32)
-                self.state.set(STATE_KEY_TOKEN, token)
-
-            # generate the private key if one is not present in the
-            # application data bucket of the peer relation
-            if not self.state.get(STATE_KEY_PRIVATE_KEY):
-                private_key: bytes = generate_private_key(key_size=4095)
-                self.state.set(STATE_KEY_PRIVATE_KEY, private_key.decode())
-
-            self._update_workload(event)
-
-        except RelationNotReadyError:
-            event.defer()
-            return
+            except RelationNotReadyError:
+                event.defer()
+                return
+        self._update_workload(event)
 
     def _update_workload(self, event):
         """' Update workload with all available configuration
@@ -193,7 +190,13 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
+        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+            self.unit.name.replace("/", "-"), self.app.name, self.model.name
+        )
         try:
+            if self.state.get(STATE_KEY_DNS_NAME):
+                dnsname = self.state.get(STATE_KEY_DNS_NAME)
+
             # check if the database connection string has been
             # recorded in the peer relation's application data bucket
             if not self.state.get(STATE_KEY_DB_URI):
@@ -213,12 +216,6 @@ class OpenFGAOperatorCharm(CharmBase):
         except RelationNotReadyError:
             event.defer()
             return
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-        if self.state.get(STATE_KEY_DNS_NAME):
-            dnsname = self.state.get(STATE_KEY_DNS_NAME)
 
         # if openfga relation exists, make sure the address is
         # updated
@@ -247,21 +244,15 @@ class OpenFGAOperatorCharm(CharmBase):
         token = ""
         try:
             token = self.state.get(STATE_KEY_TOKEN)
-        except RelationNotReadyError:
-            logger.info(
-                "could not fetch openfga token from the peer relation state"
-            )
+            if token:
+                env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
+                env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = self.state.get(
+                    STATE_KEY_TOKEN
+                )
 
-        if token:
-            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
-            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = self.state.get(
-                STATE_KEY_TOKEN
-            )
-
-        try:
-            if self.state.get(STATE_KEY_CERTIFICATE):
-                certificate = self.state.get(STATE_KEY_CERTIFICATE)
-                key = self.state.get(STATE_KEY_PRIVATE_KEY)
+            certificate = self.state.get(STATE_KEY_CERTIFICATE)
+            key = self.state.get(STATE_KEY_PRIVATE_KEY)
+            if certificate and key:
                 container.push(
                     "/app/certificate.pem", certificate, make_dirs=True
                 )
@@ -273,9 +264,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 env_vars["OPENFGA_GRPC_TLS_CERT"] = "/app/certificate.pem"
                 env_vars["OPENFGA_GRPC_TLS_KEY"] = "/app/key.pem"
         except RelationNotReadyError:
-            logger.info(
-                "could not fetch certificates from the peer relation state"
-            )
+            logger.info("could not information from the peer relation state")
 
         env_vars = {key: value for key, value in env_vars.items() if value}
         for setting in REQUIRED_SETTINGS:
@@ -615,17 +604,23 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
-        private_key = peer_relation.data[self.app].get("private-key")
-        csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=self.config.get("dns-name", self.cert_subject),
+        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+            self.unit.name.replace("/", "-"), self.app.name, self.model.name
         )
-
         try:
+            if self.state.get(STATE_KEY_DNS_NAME):
+                dnsname = self.state.get(STATE_KEY_DNS_NAME)
+
+            private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
+            csr = generate_csr(
+                private_key=private_key.encode(),
+                subject=dnsname,
+            )
             self.state.set(STATE_KEY_CSR, csr.decode())
         except RelationNotReadyError:
             event.defer()
             return
+
         self.certificates.request_certificate_creation(
             certificate_signing_request=csr
         )
@@ -634,83 +629,87 @@ class OpenFGAOperatorCharm(CharmBase):
         self, event: CertificateAvailableEvent
     ) -> None:
         if not self.unit.is_leader():
-            return
-        peer_relation = self.model.get_relation("openfga-peer")
-        if not peer_relation:
-            self.unit.status = WaitingStatus(
-                "Waiting for peer relation to be created"
-            )
-            event.defer()
-            return
-
-        try:
-            self.state.set(STATE_KEY_CERTIFICATE, event.certificate)
-            self.state.set(STATE_KEY_CA, event.ca)
-            self.state.set(STATE_KEY_CHAIN, event.chain)
-        except RelationNotReadyError:
-            event.defer()
-            return
+            try:
+                self.state.set(STATE_KEY_CERTIFICATE, event.certificate)
+                self.state.set(STATE_KEY_CA, event.ca)
+                self.state.set(STATE_KEY_CHAIN, event.chain)
+            except RelationNotReadyError:
+                event.defer()
+                return
         self._update_workload(event)
 
     def _on_certificate_expiring(
         self, event: CertificateExpiringEvent
     ) -> None:
         if not self.unit.is_leader():
-            return
-        old_csr = ""
-        private_key = ""
-        try:
-            old_csr = self.state.get(STATE_KEY_CSR)
-            private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
-        except RelationNotReadyError:
-            event.defer()
-            return
+            old_csr = ""
+            private_key = ""
+            try:
+                old_csr = self.state.get(STATE_KEY_CSR)
+                private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
+            except RelationNotReadyError:
+                event.defer()
+                return
 
-        new_csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=self.config.get("dns-name", self.cert_subject),
-        )
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-        try:
-            self.state.set(STATE_KEY_CSR, new_csr.decode())
-        except RelationNotReadyError:
-            event.defer()
-            return
+            dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+                self.unit.name.replace("/", "-"),
+                self.app.name,
+                self.model.name,
+            )
+            if self.state.get(STATE_KEY_DNS_NAME):
+                dnsname = self.state.get(STATE_KEY_DNS_NAME)
+
+            new_csr = generate_csr(
+                private_key=private_key.encode(), subject=dnsname
+            )
+            self.certificates.request_certificate_renewal(
+                old_certificate_signing_request=old_csr,
+                new_certificate_signing_request=new_csr,
+            )
+            try:
+                self.state.set(STATE_KEY_CSR, new_csr.decode())
+            except RelationNotReadyError:
+                event.defer()
+                return
+
+        self._update_workload()
 
     def _on_certificate_revoked(self, event: CertificateRevokedEvent) -> None:
         if not self.unit.is_leader():
-            return
+            old_csr = ""
+            private_key = ""
+            try:
+                old_csr = self.state.get(STATE_KEY_CSR)
+                private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
 
-        old_csr = ""
-        private_key = ""
-        try:
-            old_csr = self.state.get(STATE_KEY_CSR)
-            private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
-        except RelationNotReadyError:
-            event.defer()
-            return
+                dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+                    self.unit.name.replace("/", "-"),
+                    self.app.name,
+                    self.model.name,
+                )
+                if self.state.get(STATE_KEY_DNS_NAME):
+                    dnsname = self.state.get(STATE_KEY_DNS_NAME)
 
-        new_csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=self.config.get("dns-name", self.cert_subject),
-        )
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-        try:
-            self.state.set(STATE_KEY_CSR, new_csr.decode())
-            self.state.unset(
-                STATE_KEY_CERTIFICATE, STATE_KEY_CA, STATE_KEY_CHAIN
-            )
-        except RelationNotReadyError:
-            event.defer()
-            return
+                new_csr = generate_csr(
+                    private_key=private_key.encode(),
+                    subject=dnsname,
+                )
+                self.certificates.request_certificate_renewal(
+                    old_certificate_signing_request=old_csr,
+                    new_certificate_signing_request=new_csr,
+                )
+
+                self.state.set(STATE_KEY_CSR, new_csr.decode())
+                self.state.unset(
+                    STATE_KEY_CERTIFICATE, STATE_KEY_CA, STATE_KEY_CHAIN
+                )
+            except RelationNotReadyError:
+                event.defer()
+                return
 
         self.unit.status = WaitingStatus("Waiting for new certificate")
+
+        self._update_workload()
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
         if self.unit.is_leader():

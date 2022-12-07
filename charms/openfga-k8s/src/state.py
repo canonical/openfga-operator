@@ -63,6 +63,6 @@ class PeerRelationState:
     def get(self, key: str) -> str:
         relation = self._get_relation()
         if not relation:
-            return ""
+            return None
         else:
             return relation.data[self._app].get(key, "")
