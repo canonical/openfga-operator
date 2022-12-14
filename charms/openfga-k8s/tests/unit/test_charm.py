@@ -9,7 +9,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from charm import OpenFGAOperatorCharm
+from charm import (
+    STATE_KEY_CA,
+    STATE_KEY_CERTIFICATE,
+    STATE_KEY_CHAIN,
+    STATE_KEY_DB_URI,
+    STATE_KEY_DNS_NAME,
+    STATE_KEY_PRIVATE_KEY,
+    STATE_KEY_SCHEMA_CREATED,
+    STATE_KEY_TOKEN,
+    OpenFGAOperatorCharm,
+)
 from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
@@ -40,13 +50,14 @@ class TestCharm(unittest.TestCase):
             rel_id,
             "openfga-k8s",
             {
-                "token": "test-token",
-                "schema-migration-ran": "true",
-                "db-uri": "test-db-uri",
-                "private-key": "test-key",
-                "certificate": "test-cert",
-                "ca": "test-ca",
-                "chain": "test-chain",
+                STATE_KEY_TOKEN: "test-token",
+                STATE_KEY_SCHEMA_CREATED: "true",
+                STATE_KEY_DB_URI: "test-db-uri",
+                STATE_KEY_PRIVATE_KEY: "test-key",
+                STATE_KEY_CERTIFICATE: "test-cert",
+                STATE_KEY_CA: "test-ca",
+                STATE_KEY_CHAIN: "test-chain",
+                STATE_KEY_DNS_NAME: "test-dns-name",
             },
         )
 
@@ -111,9 +122,9 @@ class TestCharm(unittest.TestCase):
             rel_id,
             "openfga-k8s",
             {
-                "token": "test-token",
-                "schema-migration-ran": "true",
-                "db-uri": "test-db-uri",
+                STATE_KEY_TOKEN: "test-token",
+                STATE_KEY_SCHEMA_CREATED: "true",
+                STATE_KEY_DB_URI: "test-db-uri",
             },
         )
 
