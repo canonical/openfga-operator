@@ -58,7 +58,7 @@ class PeerRelationState:
             raise RelationNotReadyError
         else:
             for key in keys:
-                relation.data[self._app].pop(key)
+                relation.data[self._app].pop(key, None)
 
     def get(self, key: str) -> str:
         relation = self._get_relation()

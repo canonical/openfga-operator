@@ -23,6 +23,9 @@ from charms.data_platform_libs.v0.database_requires import (
     DatabaseEvent,
     DatabaseRequires,
 )
+from charms.observability_libs.v1.kubernetes_service_patch import (
+    KubernetesServicePatch,
+)
 from charms.tls_certificates_interface.v1.tls_certificates import (
     CertificateAvailableEvent,
     CertificateExpiringEvent,
@@ -36,6 +39,7 @@ from charms.traefik_k8s.v1.ingress import (
     IngressPerAppRequirer,
     IngressPerAppRevokedEvent,
 )
+from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus
@@ -127,6 +131,16 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         self.framework.observe(
             self.on.database_relation_broken, self._on_database_relation_broken
+        )
+
+        portHTTP = ServicePort(
+            8080, name=f"{self.app.name}-http", protocol="TCP"
+        )
+        portGRPC = ServicePort(
+            8081, name=f"{self.app.name}-grpc", protocol="TCP"
+        )
+        self.service_patcher = KubernetesServicePatch(
+            self, [portHTTP, portGRPC]
         )
 
         self.state = PeerRelationState(self.model, self.app, "openfga-peer")

@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 class TestCharm(unittest.TestCase):
-    def setUp(self):
+    @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    def setUp(self, *unused):
         self.harness = Harness(OpenFGAOperatorCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.disable_hooks()
@@ -110,6 +111,7 @@ class TestCharm(unittest.TestCase):
         self,
         get_address,
         create_openfga_store,
+        *unused,
     ):
         create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
         get_address.return_value = "10.10.0.17"
