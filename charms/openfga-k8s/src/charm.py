@@ -34,6 +34,11 @@ from charms.tls_certificates_interface.v1.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
+
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
