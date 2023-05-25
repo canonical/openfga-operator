@@ -3,8 +3,6 @@
 Charmhub package name: operator-template
 More information: https://charmhub.io/openfga-k8s
 
-Describe your charm in one or two sentences.
-
 ## Other resources
 
 - [Read more](https://openfga.dev)
