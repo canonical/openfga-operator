@@ -69,6 +69,7 @@ STATE_KEY_SCHEMA_CREATED = "schema-created"
 STATE_KEY_TOKEN = "openfga-token"
 
 LOG_FILE = "/var/log/openfga-k8s"
+LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 
 OPENFGA_SERVER_PORT = 8080
 
@@ -226,6 +227,9 @@ class OpenFGAOperatorCharm(CharmBase):
         """' Update workload with all available configuration
         data."""
 
+        # Quickly update logrotates config each workload update
+        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
+       
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
         if not container.can_connect():
@@ -324,7 +328,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga": {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": "/app/openfga run",
+                    "command": "/app/openfga run | tee {LOG_FILE}",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -774,6 +778,29 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload(event)
 
+    def _get_logrotate_config(self):
+        return f'''{LOG_FILE} {"{"}
+            rotate 3
+            daily
+            compress
+            delaycompress
+            missingok
+            notifempty
+            size 10M 
+{"}"}
+'''
+
+    def _push_to_workload(self, filename, content, event):
+            """Create file on the workload container with
+            the specified content."""
+
+            container = self.unit.get_container(WORKLOAD_CONTAINER)
+            if container.can_connect():
+                logger.info("pushing file {} to the workload containe".format(filename))
+                container.push(filename, content, make_dirs=True)
+            else:
+                logger.info("workload container not ready - defering")
+                event.defer()
 
 def map_config_to_env_vars(charm, **additional_env):
     """
