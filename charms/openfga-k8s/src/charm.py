@@ -68,6 +68,10 @@ STATE_KEY_PRIVATE_KEY = "private-key"
 STATE_KEY_SCHEMA_CREATED = "schema-created"
 STATE_KEY_TOKEN = "openfga-token"
 
+LOG_FILE = "/var/log/openfga-k8s"
+
+OPENFGA_SERVER_PORT = 8080
+
 
 class OpenFGAOperatorCharm(CharmBase):
     """OpenFGA Operator Charm."""
@@ -86,6 +90,26 @@ class OpenFGAOperatorCharm(CharmBase):
         # Actions
         self.framework.observe(
             self.on.schema_upgrade_action, self.on_schema_upgrade_action
+        )
+
+        # Grafana dashboard relation
+        self._grafana_dashboards = GrafanaDashboardProvider(self, relation_name="grafana-dashboard")
+
+        # Loki log-proxy relation (TODO(ale8k): Test this works properly)
+        self.log_proxy = LogProxyConsumer(
+            self, 
+            log_files=[LOG_FILE], 
+            relation_name="log-proxy",
+            promtail_resource_name="promtail-bin",
+            container_name=WORKLOAD_CONTAINER
+        )
+
+        # Prometheus metrics endpoint relation
+        self.metrics_endpoint = MetricsEndpointProvider(
+            self,
+            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
+            refresh_event=self.on.config_changed,
+            relation_name="metrics-endpoint",
         )
 
         # OpenFGA relation
