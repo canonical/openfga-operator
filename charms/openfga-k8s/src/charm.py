@@ -34,6 +34,11 @@ from charms.tls_certificates_interface.v1.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
+
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
@@ -63,6 +68,11 @@ STATE_KEY_PRIVATE_KEY = "private-key"
 STATE_KEY_SCHEMA_CREATED = "schema-created"
 STATE_KEY_TOKEN = "openfga-token"
 
+LOG_FILE = "/var/log/openfga-k8s"
+LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
+
+OPENFGA_SERVER_PORT = 8080
+
 
 class OpenFGAOperatorCharm(CharmBase):
     """OpenFGA Operator Charm."""
@@ -81,6 +91,26 @@ class OpenFGAOperatorCharm(CharmBase):
         # Actions
         self.framework.observe(
             self.on.schema_upgrade_action, self.on_schema_upgrade_action
+        )
+
+        # Grafana dashboard relation
+        self._grafana_dashboards = GrafanaDashboardProvider(self, relation_name="grafana-dashboard")
+
+        # Loki log-proxy relation (TODO(ale8k): Test this works properly)
+        self.log_proxy = LogProxyConsumer(
+            self, 
+            log_files=[LOG_FILE], 
+            relation_name="log-proxy",
+            promtail_resource_name="promtail-bin",
+            container_name=WORKLOAD_CONTAINER
+        )
+
+        # Prometheus metrics endpoint relation
+        self.metrics_endpoint = MetricsEndpointProvider(
+            self,
+            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
+            refresh_event=self.on.config_changed,
+            relation_name="metrics-endpoint",
         )
 
         # OpenFGA relation
@@ -197,6 +227,9 @@ class OpenFGAOperatorCharm(CharmBase):
         """' Update workload with all available configuration
         data."""
 
+        # Quickly update logrotates config each workload update
+        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
+       
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
         if not container.can_connect():
@@ -295,7 +328,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga": {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": "/app/openfga run",
+                    "command": "/app/openfga run | tee {LOG_FILE}",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -745,6 +778,29 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload(event)
 
+    def _get_logrotate_config(self):
+        return f'''{LOG_FILE} {"{"}
+            rotate 3
+            daily
+            compress
+            delaycompress
+            missingok
+            notifempty
+            size 10M 
+{"}"}
+'''
+
+    def _push_to_workload(self, filename, content, event):
+            """Create file on the workload container with
+            the specified content."""
+
+            container = self.unit.get_container(WORKLOAD_CONTAINER)
+            if container.can_connect():
+                logger.info("pushing file {} to the workload containe".format(filename))
+                container.push(filename, content, make_dirs=True)
+            else:
+                logger.info("workload container not ready - defering")
+                event.defer()
 
 def map_config_to_env_vars(charm, **additional_env):
     """
