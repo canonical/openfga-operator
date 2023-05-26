@@ -110,7 +110,7 @@ async def test_upgrade_running_application(ops_test: OpsTest):
     """
 
     # Build charm that requires charm-under-test
-    test_charm = await ops_test.build_charm("../openfga-requires/")
+    test_charm = await ops_test.build_charm("./tests/charms/openfga_requires/")
 
     # Deploy the charm and wait for active/idle status
     logger.debug("deploying charms from store")
