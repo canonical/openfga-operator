@@ -20,24 +20,22 @@ APP_NAME = "openfga"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest):
-    """Build the charm-under-test and deploy it together with related charms.
+async def test_upgrade_running_application(ops_test: OpsTest):
+    """Deploy latest published charm and upgrade it with charm-under-test.
 
-    Assert on the unit status before any relations/configurations take place.
+    Assert on the application status and health check endpoint after upgrade/refresh took place.
     """
-    # Build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
-    resources = {"openfga-image": "localhost:32000/openfga:latest"}
 
+    # Build charm that requires charm-under-test
     test_charm = await ops_test.build_charm("./tests/charms/openfga_requires/")
 
     # Deploy the charm and wait for active/idle status
-    logger.debug("deploying charms")
+    logger.debug("deploying charms from store")
     await asyncio.gather(
         ops_test.model.deploy(
-            charm,
-            resources=resources,
+            METADATA['name'],
             application_name=APP_NAME,
+            channel="edge",
             series="jammy",
         ),
         ops_test.model.deploy(
@@ -101,3 +99,38 @@ async def test_build_and_deploy(ops_test: OpsTest):
     assert (
         "running with store" in openfga_requires_unit.workload_status_message
     )
+
+    # Starting upgrade/refresh
+    logger.debug("starting upgrade test")
+
+    # Build and deploy charm from local source folder
+    logger.debug("building local charm")
+
+    charm = await ops_test.build_charm(".")
+    resources = {"openfga-image": "localhost:32000/openfga:latest"}
+
+    # Deploy the charm and wait for active/idle status
+    logger.debug("refreshing running application with the new local charm")
+
+    await ops_test.model.applications[APP_NAME].refresh(
+        path=charm,
+        resources=resources,
+    )
+
+    async with ops_test.fast_forward():
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            timeout=60,
+        )
+
+    assert ops_test.model.applications[APP_NAME].status == "active"
+
+    upgraded_openfga_unit = await utils.get_unit_by_name(
+        APP_NAME, "0", ops_test.model.units
+    )
+
+    health = await upgraded_openfga_unit.run("curl -s http://localhost:8080/healthz")
+    await health.wait()
+    assert health.results.get("return-code") == 0
+    assert health.results.get("stdout").strip() == '{"status":"SERVING"}'
