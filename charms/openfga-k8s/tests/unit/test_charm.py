@@ -133,8 +133,8 @@ class TestCharm(unittest.TestCase):
             },
         )
 
-    @patch("charm.OpenFGAOperatorCharm.create_openfga_store")
-    @patch("charm.OpenFGAOperatorCharm.get_address")
+    @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
+    @patch("charm.OpenFGAOperatorCharm._get_address")
     def test_on_openfga_relation_joined(
         self,
         get_address,

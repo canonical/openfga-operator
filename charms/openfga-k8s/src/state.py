@@ -17,6 +17,8 @@ from ops.model import Application, Model, Relation
 
 
 class RelationNotReadyError(Exception):
+    """Is returned when the peer relation is not ready."""
+
     pass
 
 
@@ -46,6 +48,7 @@ class PeerRelationState:
         return relation
 
     def set(self, key: str, value: str) -> None:
+        """Sets the value for the specified key."""
         relation = self._get_relation()
         if not relation:
             raise RelationNotReadyError
@@ -53,6 +56,7 @@ class PeerRelationState:
             relation.data[self._app].update({key: value})
 
     def unset(self, *keys) -> None:
+        """Unsets the value for the specified key."""
         relation = self._get_relation()
         if not relation:
             raise RelationNotReadyError
@@ -61,6 +65,7 @@ class PeerRelationState:
                 relation.data[self._app].pop(key, None)
 
     def get(self, key: str) -> str:
+        """Returns the value for the specified key."""
         relation = self._get_relation()
         if not relation:
             return None

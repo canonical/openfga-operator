@@ -23,9 +23,12 @@ from charms.data_platform_libs.v0.database_requires import (
     DatabaseEvent,
     DatabaseRequires,
 )
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import (
     KubernetesServicePatch,
 )
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tls_certificates_interface.v1.tls_certificates import (
     CertificateAvailableEvent,
     CertificateExpiringEvent,
@@ -34,11 +37,6 @@ from charms.tls_certificates_interface.v1.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
-
-from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
-from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
-from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
@@ -90,25 +88,29 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Actions
         self.framework.observe(
-            self.on.schema_upgrade_action, self.on_schema_upgrade_action
+            self.on.schema_upgrade_action, self._on_schema_upgrade_action
         )
 
         # Grafana dashboard relation
-        self._grafana_dashboards = GrafanaDashboardProvider(self, relation_name="grafana-dashboard")
+        self._grafana_dashboards = GrafanaDashboardProvider(
+            self, relation_name="grafana-dashboard"
+        )
 
         # Loki log-proxy relation (TODO(ale8k): Test this works properly)
         self.log_proxy = LogProxyConsumer(
-            self, 
-            log_files=[LOG_FILE], 
+            self,
+            log_files=[LOG_FILE],
             relation_name="log-proxy",
             promtail_resource_name="promtail-bin",
-            container_name=WORKLOAD_CONTAINER
+            container_name=WORKLOAD_CONTAINER,
         )
 
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
+            jobs=[
+                {"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}
+            ],
             refresh_event=self.on.config_changed,
             relation_name="metrics-endpoint",
         )
@@ -163,26 +165,24 @@ class OpenFGAOperatorCharm(CharmBase):
             self.on.database_relation_broken, self._on_database_relation_broken
         )
 
-        portHTTP = ServicePort(
+        port_http = ServicePort(
             8080, name=f"{self.app.name}-http", protocol="TCP"
         )
-        portGRPC = ServicePort(
+        port_grpc = ServicePort(
             8081, name=f"{self.app.name}-grpc", protocol="TCP"
         )
         self.service_patcher = KubernetesServicePatch(
-            self, [portHTTP, portGRPC]
+            self, [port_http, port_grpc]
         )
 
         self.state = PeerRelationState(self.model, self.app, "openfga-peer")
 
     def _on_openfga_pebble_ready(self, event):
         """Workload pebble ready."""
-
         self._update_workload(event)
 
     def _on_config_changed(self, event):
         """Configuration changed."""
-
         self._update_workload(event)
 
     def _on_start(self, event):
@@ -191,7 +191,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_stop(self, _):
         """Stop OpenFGA."""
-
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
             container.stop("openfga")
@@ -199,7 +198,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_update_status(self, _):
         """Update the status of the charm."""
-
         self._ready()
 
     def _on_leader_elected(self, event):
@@ -228,8 +226,10 @@ class OpenFGAOperatorCharm(CharmBase):
         data."""
 
         # Quickly update logrotates config each workload update
-        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
-       
+        self._push_to_workload(
+            LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event
+        )
+
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
         if not container.can_connect():
@@ -272,7 +272,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 old_address = openfga_relation.data[self.app].get(
                     "address", ""
                 )
-                new_address = self.get_address(openfga_relation)
+                new_address = self._get_address(openfga_relation)
                 if old_address != new_address:
                     openfga_relation.data[self.app].update(
                         {"address": new_address}
@@ -357,7 +357,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_database_event(self, event: DatabaseEvent) -> None:
         """Database event handler."""
-
         # get the first endpoint from a comma separate list
         ep = event.endpoints.split(",", 1)[0]
         # compose the db connection string
@@ -374,7 +373,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
         """Database relation broken handler."""
-
         # when the database relation is broken, we unset the
         # connection string and schema-created from the application
         # bucket of the peer relation
@@ -426,7 +424,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
         """OpenFGA relation changed."""
-
         if not self.unit.is_leader():
             return
 
@@ -455,7 +452,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 dnsname = dns
 
             logger.info("creating store {}".format(store_name))
-            store_id = self.create_openfga_store(store_name)
+            store_id = self._create_openfga_store(store_name)
         except RelationNotReadyError:
             event.defer()
             return
@@ -469,7 +466,7 @@ class OpenFGAOperatorCharm(CharmBase):
         data = {
             "store-id": store_id,
             "token": token,
-            "address": self.get_address(event.relation),
+            "address": self._get_address(event.relation),
             "scheme": "http",
             "port": "8080",
         }
@@ -479,15 +476,13 @@ class OpenFGAOperatorCharm(CharmBase):
         logger.info("setting openfga relation data {}".format(data))
         event.relation.data[self.app].update(data)
 
-    def get_address(self, relation: Relation):
-        """get_address will return the ip address to be used
-        with the specified relation."""
-
+    def _get_address(self, relation: Relation):
+        """Returns the ip address to be used with the specified relation."""
         return self.model.get_binding(
             relation
         ).network.ingress_address.exploded
 
-    def create_openfga_store(self, store_name: str):
+    def _create_openfga_store(self, store_name: str):
         logger.info("creating store: {}".format(store_name))
 
         address = "http://localhost:8080"
@@ -501,7 +496,7 @@ class OpenFGAOperatorCharm(CharmBase):
         # we need to check if the store with the specified name already
         # exists, otherwise OpenFGA will happily create a new store with
         # the same name, but different id.
-        stores = self.list_stores(address, headers)
+        stores = self._list_stores(address, headers)
         for store in stores:
             if store["name"] == store_name:
                 logger.info(
@@ -533,7 +528,7 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         return ""
 
-    def list_stores(
+    def _list_stores(
         self, openfga_host: str, headers, continuation_token=""
     ) -> list:
         # to list stores we need to issue a GET request to the /stores
@@ -555,24 +550,22 @@ class OpenFGAOperatorCharm(CharmBase):
         for store in data["stores"]:
             stores.append({"id": store["id"], "name": store["name"]})
 
-        # if the response containes a continuation_token, we
+        # if the response contains a continuation_token, we
         # need an additional request to fetch all the stores
         ctoken = data["continuation_token"]
         if not ctoken:
             return stores
         else:
             return stores.append(
-                self.list_stores(
+                self._list_stores(
                     openfga_host,
                     headers,
                     continuation_token=ctoken,
                 )
             )
 
-    def on_schema_upgrade_action(self, event):
-        """
-        Performs a schema upgrade on the configurable database
-        """
+    def _on_schema_upgrade_action(self, event):
+        """Performs a schema upgrade on the configurable database"""
         if not self.unit.is_leader():
             event.set_results({"error": "unit is not the leader"})
             return
@@ -779,7 +772,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self._update_workload(event)
 
     def _get_logrotate_config(self):
-        return f'''{LOG_FILE} {"{"}
+        return f"""{LOG_FILE} {"{"}
             rotate 3
             daily
             compress
@@ -788,23 +781,25 @@ class OpenFGAOperatorCharm(CharmBase):
             notifempty
             size 10M 
 {"}"}
-'''
+"""
 
     def _push_to_workload(self, filename, content, event):
-            """Create file on the workload container with
-            the specified content."""
+        """Create file on the workload container with
+        the specified content."""
 
-            container = self.unit.get_container(WORKLOAD_CONTAINER)
-            if container.can_connect():
-                logger.info("pushing file {} to the workload containe".format(filename))
-                container.push(filename, content, make_dirs=True)
-            else:
-                logger.info("workload container not ready - defering")
-                event.defer()
+        container = self.unit.get_container(WORKLOAD_CONTAINER)
+        if container.can_connect():
+            logger.info(
+                "pushing file {} to the workload containe".format(filename)
+            )
+            container.push(filename, content, make_dirs=True)
+        else:
+            logger.info("workload container not ready - defering")
+            event.defer()
+
 
 def map_config_to_env_vars(charm, **additional_env):
-    """
-    Maps the config values provided in config.yaml into environment variables
+    """Maps the config values provided in config.yaml into environment variables
     such that they can be passed directly to the pebble layer.
     """
     env_mapped_config = {
