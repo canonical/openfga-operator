@@ -43,6 +43,10 @@ peers:
 provides:
   openfga:
     interface: openfga
+  grafana-dashboard:
+    interface: grafana_dashboard
+  metrics-endpoint:
+    interface: prometheus_scrape
 
 requires:
   ingress:
@@ -54,6 +58,10 @@ requires:
   certificates:
     interface: tls-certificates
     limit: 1
+  log-proxy:
+    interface: loki_push_api
+    optional: true
+    limit: 1
 
 containers:
   openfga:
@@ -63,3 +71,9 @@ resources:
   openfga-image:
     type: oci-image
     description: OCI image for OpenFGA
+
+  # Temporary workaround until pebble can forward logs to Loki directly.
+  promtail-bin:
+    type: file
+    description: Promtail binary for logging
+    filename: promtail-linux

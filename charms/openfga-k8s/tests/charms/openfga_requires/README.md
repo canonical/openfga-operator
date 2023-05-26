@@ -1,0 +1,1 @@
+This is a test charm to test the openfga relation interface.

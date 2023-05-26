@@ -7,7 +7,7 @@ import logging
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from charm import (
     STATE_KEY_CA,
@@ -23,6 +23,8 @@ from charm import (
 from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
+
+LOG_FILE = "/var/log/openfga-k8s"
 
 
 class TestCharm(unittest.TestCase):
@@ -41,6 +43,32 @@ class TestCharm(unittest.TestCase):
         )
 
         self.harness.container_pebble_ready("openfga")
+
+    @patch("charm.OpenFGAOperatorCharm._get_logrotate_config")
+    def test_logrotate_config_pushed(self, get_logrotate_config: MagicMock):
+        self.harness.set_leader(True)
+
+        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        self.harness.update_relation_data(
+            rel_id,
+            "openfga-k8s",
+            {
+                STATE_KEY_TOKEN: "test-token",
+                STATE_KEY_SCHEMA_CREATED: "true",
+                STATE_KEY_DB_URI: "test-db-uri",
+                STATE_KEY_PRIVATE_KEY: "test-key",
+                STATE_KEY_CERTIFICATE: "test-cert",
+                STATE_KEY_CA: "test-ca",
+                STATE_KEY_CHAIN: "test-chain",
+                STATE_KEY_DNS_NAME: "test-dns-name",
+            },
+        )
+
+        container = self.harness.model.unit.get_container("openfga")
+        self.harness.charm.on.openfga_pebble_ready.emit(container)
+        get_logrotate_config.assert_called_once()
+        
 
     def test_on_config_changed(self):
         self.harness.set_leader(True)
@@ -85,7 +113,7 @@ class TestCharm(unittest.TestCase):
                         "override": "merge",
                         "startup": "disabled",
                         "summary": "OpenFGA",
-                        "command": "/app/openfga run",
+                        "command": "/app/openfga run | tee {LOG_FILE}",
                         "environment": {
                             "OPENFGA_AUTHN_METHOD": "preshared",
                             "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
@@ -105,8 +133,8 @@ class TestCharm(unittest.TestCase):
             },
         )
 
-    @patch("charm.OpenFGAOperatorCharm.create_openfga_store")
-    @patch("charm.OpenFGAOperatorCharm.get_address")
+    @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
+    @patch("charm.OpenFGAOperatorCharm._get_address")
     def test_on_openfga_relation_joined(
         self,
         get_address,

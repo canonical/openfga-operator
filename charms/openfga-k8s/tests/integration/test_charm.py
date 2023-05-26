@@ -29,7 +29,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     charm = await ops_test.build_charm(".")
     resources = {"openfga-image": "localhost:32000/openfga:latest"}
 
-    test_charm = await ops_test.build_charm("../openfga-requires/")
+    test_charm = await ops_test.build_charm("./tests/charms/openfga_requires/")
 
     # Deploy the charm and wait for active/idle status
     logger.debug("deploying charms")
