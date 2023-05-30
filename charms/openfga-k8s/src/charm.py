@@ -328,7 +328,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga": {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": "/app/openfga run | tee {LOG_FILE}",
+                    "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
                     "startup": "disabled",
                     "environment": env_vars,
                 }

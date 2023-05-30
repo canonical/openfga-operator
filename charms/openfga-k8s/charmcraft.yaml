@@ -4,8 +4,11 @@
 type: charm
 parts:
   charm:
-    charm-python-packages: [setuptools]
+    charm-python-packages: 
+      - setuptools
+      - pyopenssl
     build-packages:
+      - pkg-config
       - libffi-dev
       - libssl-dev
       - rustc
