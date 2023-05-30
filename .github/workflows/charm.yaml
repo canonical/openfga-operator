@@ -1,0 +1,82 @@
+name: BuildCharm
+on:
+  workflow_dispatch:
+    inputs:
+      charm:
+        description: "Charm to build."
+        default: "openfga-k8s"
+        required: false
+        type: choice
+        options:
+          - openfga-k8s
+env:
+  GH_USER: ${{ secrets.GH_USER }}
+  GH_AUTH: ${{ secrets.GH_AUTH }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/${{ inputs.charm }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: python3 -m pip install tox
+      - name: Run linters
+        run: tox -e lint
+  unit-test:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/${{ inputs.charm }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: python3 -m pip install tox
+      - name: Run linters
+        run: tox -e lint
+  integration-test-microk8s:
+    name: Integration tests (microk8s)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/${{ inputs.charm }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@1.1.0
+        with:
+          provider: microk8s
+          microk8s-addons: "storage dns rbac registry"
+      - name: Create local OCI images
+        run: cd .. && make push-images-microk8s
+      - name: Run integration tests
+        # set a predictable model name so it can be consumed by charm-logdump-action
+        run: tox -e integration -- --model testing
+      - name: Dump logs
+        uses: canonical/charm-logdump-action@main
+        if: failure()
+        with:
+          app: temporal-k8s
+          model: testing
+  build-charm:
+    needs:
+      - unit-test
+      - integration-test-microk8s
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - run: git fetch --prune --unshallow
+      - run: sudo snap install charmcraft --channel=2.x/stable --classic
+      - run: charmcraft pack --project-dir ./charms/${{ inputs.charm }} --destructive-mode
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.charm }}-charm
+          path: ./*.charm
+          if-no-files-found: error

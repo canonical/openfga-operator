@@ -71,6 +71,7 @@ resources:
   openfga-image:
     type: oci-image
     description: OCI image for OpenFGA
+    upstream-source: openfga:latest
 
   # Temporary workaround until pebble can forward logs to Loki directly.
   promtail-bin:
