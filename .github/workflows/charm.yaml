@@ -50,7 +50,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup operator environment
-        uses: kian99/actions-operator@microk8s-options
+        uses: charmed-kubernetes/actions-operator@1.1.0
         with:
           provider: microk8s
           microk8s-addons: "storage dns rbac registry"

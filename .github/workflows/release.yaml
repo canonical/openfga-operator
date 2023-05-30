@@ -1,0 +1,31 @@
+name: Release to latest/edge
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  charm-tests:
+    uses: ./.github/workflows/charm.yaml
+
+  release-to-charmhub:
+    name: Release to CharmHub
+    needs:
+      - charm-tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Build local images
+        run: make build-image
+      - name: Upload charm to charmhub
+        uses: kian99/charming-actions/upload-charm@add-local-image-option
+        with:
+          credentials: "${{ secrets.CHARMHUB_TOKEN }}"
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          channel: "latest/edge"
+          charm-path: "./charms/openfga-k8s"
+          local-image: "true"
