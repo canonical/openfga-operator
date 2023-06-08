@@ -431,9 +431,9 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
-        # the requires side will put the store-name in its
+        # the requires side will put the store_name in its
         # application bucket
-        store_name = event.relation.data[event.app].get("store-name", "")
+        store_name = event.relation.data[event.app].get("store_name", "")
         if not store_name:
             return
 
@@ -464,14 +464,14 @@ class OpenFGAOperatorCharm(CharmBase):
         # update the relation data with information needed
         # to connect to OpenFga
         data = {
-            "store-id": store_id,
+            "store_id": store_id,
             "token": token,
             "address": self._get_address(event.relation),
             "scheme": "http",
             "port": "8080",
         }
         if dnsname:
-            data["dns-name"] = dnsname
+            data["dns_name"] = dnsname
 
         logger.info("setting openfga relation data {}".format(data))
         event.relation.data[self.app].update(data)
@@ -790,7 +790,7 @@ class OpenFGAOperatorCharm(CharmBase):
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
             logger.info(
-                "pushing file {} to the workload containe".format(filename)
+                "pushing file {} to the workload container".format(filename)
             )
             container.push(filename, content, make_dirs=True)
         else:
@@ -799,8 +799,8 @@ class OpenFGAOperatorCharm(CharmBase):
 
 
 def map_config_to_env_vars(charm, **additional_env):
-    """Maps the config values provided in config.yaml into environment variables
-    such that they can be passed directly to the pebble layer.
+    """Maps the config values provided in config.yaml into environment
+    variables such that they can be passed directly to the pebble layer.
     """
     env_mapped_config = {
         "OPENFGA_{}".format(k.replace("-", "_").upper()): v

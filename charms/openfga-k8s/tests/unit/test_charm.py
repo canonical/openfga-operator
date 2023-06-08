@@ -7,7 +7,7 @@ import logging
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from charm import (
     STATE_KEY_CA,
@@ -68,7 +68,6 @@ class TestCharm(unittest.TestCase):
         container = self.harness.model.unit.get_container("openfga")
         self.harness.charm.on.openfga_pebble_ready.emit(container)
         get_logrotate_config.assert_called_once()
-        
 
     def test_on_config_changed(self):
         self.harness.set_leader(True)
@@ -113,7 +112,7 @@ class TestCharm(unittest.TestCase):
                         "override": "merge",
                         "startup": "disabled",
                         "summary": "OpenFGA",
-                        "command": "/app/openfga run | tee {LOG_FILE}",
+                        "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
                         "environment": {
                             "OPENFGA_AUTHN_METHOD": "preshared",
                             "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
@@ -172,7 +171,7 @@ class TestCharm(unittest.TestCase):
         self.harness.update_relation_data(
             rel_id,
             "openfga-client",
-            {"store-name": "test-store-name"},
+            {"store_name": "test-store-name"},
         )
 
         create_openfga_store.assert_called_with("test-store-name")
@@ -181,6 +180,6 @@ class TestCharm(unittest.TestCase):
             "port": "8080",
             "scheme": "http",
             "token": "test-token",
-            "store-id": "01GK13VYZK62Q1T0X55Q2BHYD6",
-            "dns-name": "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local",
+            "store_id": "01GK13VYZK62Q1T0X55Q2BHYD6",
+            "dns_name": "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local",
         }

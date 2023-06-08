@@ -52,14 +52,14 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     logger.debug("waiting for postgresql")
     await ops_test.model.wait_for_idle(
-        apps=["postgresql", "openfga-requires"],
+        apps=["postgresql"],
         status="active",
         raise_on_blocked=True,
         timeout=1000,
     )
 
     logger.debug("adding postgresql relation")
-    await ops_test.model.relate(APP_NAME, "postgresql:database")
+    await ops_test.model.integrate(APP_NAME, "postgresql:database")
 
     logger.debug("running schema-upgrade action")
     openfga_unit = await utils.get_unit_by_name(
@@ -86,7 +86,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
-    await ops_test.model.relate(APP_NAME, "openfga-requires")
+    await ops_test.model.integrate(APP_NAME, "openfga-requires")
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
