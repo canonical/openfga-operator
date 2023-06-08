@@ -9,6 +9,14 @@ on:
         type: choice
         options:
           - openfga-k8s
+  workflow_call:
+    inputs:
+      charm:
+        description: "Charm to build."
+        default: "openfga-k8s"
+        required: false
+        type: string
+
 env:
   GH_USER: ${{ secrets.GH_USER }}
   GH_AUTH: ${{ secrets.GH_AUTH }}
