@@ -33,7 +33,7 @@ async def test_upgrade_running_application(ops_test: OpsTest):
     logger.debug("deploying charms from store")
     await asyncio.gather(
         ops_test.model.deploy(
-            METADATA['name'],
+            METADATA["name"],
             application_name=APP_NAME,
             channel="edge",
             series="jammy",
@@ -50,14 +50,14 @@ async def test_upgrade_running_application(ops_test: OpsTest):
 
     logger.debug("waiting for postgresql")
     await ops_test.model.wait_for_idle(
-        apps=["postgresql", "openfga-requires"],
+        apps=["postgresql"],
         status="active",
         raise_on_blocked=True,
         timeout=1000,
     )
 
     logger.debug("adding postgresql relation")
-    await ops_test.model.relate(APP_NAME, "postgresql:database")
+    await ops_test.model.integrate(APP_NAME, "postgresql:database")
 
     logger.debug("running schema-upgrade action")
     openfga_unit = await utils.get_unit_by_name(
@@ -84,7 +84,7 @@ async def test_upgrade_running_application(ops_test: OpsTest):
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
-    await ops_test.model.relate(APP_NAME, "openfga-requires")
+    await ops_test.model.integrate(APP_NAME, "openfga-requires")
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
@@ -130,7 +130,9 @@ async def test_upgrade_running_application(ops_test: OpsTest):
         APP_NAME, "0", ops_test.model.units
     )
 
-    health = await upgraded_openfga_unit.run("curl -s http://localhost:8080/healthz")
+    health = await upgraded_openfga_unit.run(
+        "curl -s http://localhost:8080/healthz"
+    )
     await health.wait()
     assert health.results.get("return-code") == 0
     assert health.results.get("stdout").strip() == '{"status":"SERVING"}'

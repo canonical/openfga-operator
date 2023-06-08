@@ -20,7 +20,7 @@ from charms.openfga_k8s.v0.openfga import (
 )
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -45,18 +45,23 @@ class OpenfgaRequiresCharm(CharmBase):
         )
 
     def _on_update_status(self, _):
-        if self.unit.is_leader():
-            self.app.status = ActiveStatus("running")
-        self.unit.status = ActiveStatus("running")
-
         openfga_relation = self.model.get_relation("openfga-test-peer")
         if openfga_relation:
-            if "store-id" in openfga_relation.data[self.app]:
+            logger.info(
+                "relation data: {}".format(openfga_relation.data[self.app])
+            )
+            if "store_id" in openfga_relation.data[self.app]:
                 self.unit.status = ActiveStatus(
                     "running with store {}".format(
-                        openfga_relation.data[self.app].get("store-id")
+                        openfga_relation.data[self.app].get("store_id")
                     )
                 )
+            else:
+                self.unit.status = WaitingStatus(
+                    "waiting for store information"
+                )
+        else:
+            self.unit.status = BlockedStatus("waiting for openfga relation")
 
     def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent):
         if not self.unit.is_leader():
@@ -76,7 +81,7 @@ class OpenfgaRequiresCharm(CharmBase):
             event.defer()
         openfga_relation.data[self.app].update(
             {
-                "store-id": event.store_id,
+                "store_id": event.store_id,
                 "token": event.token,
                 "address": event.address,
                 "port": event.port,
