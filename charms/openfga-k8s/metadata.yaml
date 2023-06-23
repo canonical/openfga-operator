@@ -37,7 +37,7 @@ description: |
   Community section for third-party SDKs and tools.
 
 peers:
-  openfga-peer:
+  peer:
     interface: openfga-peer
 
 provides:

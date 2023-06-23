@@ -62,6 +62,7 @@ jobs:
         with:
           provider: microk8s
           microk8s-addons: "storage dns rbac registry"
+          juju-channel: 3.2/stable
       - name: Create local OCI images
         run: cd .. && make push-images-microk8s
       - name: Run integration tests
