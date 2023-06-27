@@ -1,4 +1,4 @@
-ops >= 1.5.2
+ops >= 2.3.0
 requests >= 2.25.1
 jsonschema >= 3.2.0
 cryptography >= 3.4.8

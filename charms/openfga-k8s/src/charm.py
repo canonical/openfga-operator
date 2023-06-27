@@ -15,19 +15,15 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 
+import functools
 import logging
 import secrets
 
 import requests
-from charms.data_platform_libs.v0.database_requires import (
-    DatabaseEvent,
-    DatabaseRequires,
-)
+from charms.data_platform_libs.v0.database_requires import DatabaseEvent, DatabaseRequires
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
-from charms.observability_libs.v1.kubernetes_service_patch import (
-    KubernetesServicePatch,
-)
+from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tls_certificates_interface.v1.tls_certificates import (
     CertificateAvailableEvent,
@@ -48,7 +44,8 @@ from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
-from state import PeerRelationState, RelationNotReadyError
+
+from state import State, requires_state
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +53,10 @@ WORKLOAD_CONTAINER = "openfga"
 
 REQUIRED_SETTINGS = ["OPENFGA_DATASTORE_URI"]
 
-STATE_KEY_CA = "ca"
-STATE_KEY_CERTIFICATE = "certificate"
-STATE_KEY_CHAIN = "chain"
-STATE_KEY_CSR = "csr"
-STATE_KEY_DB_URI = "db-uri"
-STATE_KEY_DNS_NAME = "dns-name"
-STATE_KEY_PRIVATE_KEY = "private-key"
-STATE_KEY_SCHEMA_CREATED = "schema-created"
-STATE_KEY_TOKEN = "openfga-token"
+LOG_FILE = "/var/log/openfga-k8s"
+LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
+
+OPENFGA_SERVER_PORT = 8080
 
 LOG_FILE = "/var/log/openfga-k8s"
 LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
@@ -72,24 +64,35 @@ LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 OPENFGA_SERVER_PORT = 8080
 
 
+def must_be_leader(func):
+    @functools.wraps(func)
+    def wrapper(ref, event):
+        if ref.unit.is_leader():
+            return func(ref, event)
+        else:
+            return
+
+    return wrapper
+
+
 class OpenFGAOperatorCharm(CharmBase):
     """OpenFGA Operator Charm."""
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(
-            self.on.openfga_pebble_ready, self._on_openfga_pebble_ready
-        )
+
+        self._state = State(self.app, lambda: self.model.get_relation("peer"))
+
+        self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.stop, self._on_stop)
+        self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
 
         # Actions
-        self.framework.observe(
-            self.on.schema_upgrade_action, self._on_schema_upgrade_action
-        )
+        self.framework.observe(self.on.schema_upgrade_action, self._on_schema_upgrade_action)
 
         # Grafana dashboard relation
         self._grafana_dashboards = GrafanaDashboardProvider(
@@ -108,17 +111,13 @@ class OpenFGAOperatorCharm(CharmBase):
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
-            jobs=[
-                {"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}
-            ],
+            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
             refresh_event=self.on.config_changed,
             relation_name="metrics-endpoint",
         )
 
         # OpenFGA relation
-        self.framework.observe(
-            self.on.openfga_relation_changed, self._on_openfga_relation_changed
-        )
+        self.framework.observe(self.on.openfga_relation_changed, self._on_openfga_relation_changed)
 
         # Certificates relation
         self.certificates = TLSCertificatesRequiresV1(self, "certificates")
@@ -140,13 +139,9 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # Ingress relation
-        self.ingress = IngressPerAppRequirer(
-            self, relation_name="ingress", port=8080
-        )
+        self.ingress = IngressPerAppRequirer(self, relation_name="ingress", port=8080)
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
-        self.framework.observe(
-            self.ingress.on.revoked, self._on_ingress_revoked
-        )
+        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
         # Database relation
         self.database = DatabaseRequires(
@@ -154,28 +149,16 @@ class OpenFGAOperatorCharm(CharmBase):
             relation_name="database",
             database_name="openfga",
         )
-        self.framework.observe(
-            self.database.on.database_created, self._on_database_event
-        )
+        self.framework.observe(self.database.on.database_created, self._on_database_event)
         self.framework.observe(
             self.database.on.endpoints_changed,
             self._on_database_event,
         )
-        self.framework.observe(
-            self.on.database_relation_broken, self._on_database_relation_broken
-        )
+        self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
-        port_http = ServicePort(
-            8080, name=f"{self.app.name}-http", protocol="TCP"
-        )
-        port_grpc = ServicePort(
-            8081, name=f"{self.app.name}-grpc", protocol="TCP"
-        )
-        self.service_patcher = KubernetesServicePatch(
-            self, [port_http, port_grpc]
-        )
-
-        self.state = PeerRelationState(self.model, self.app, "openfga-peer")
+        port_http = ServicePort(8080, name=f"{self.app.name}-http", protocol="TCP")
+        port_grpc = ServicePort(8081, name=f"{self.app.name}-grpc", protocol="TCP")
+        self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc])
 
     def _on_openfga_pebble_ready(self, event):
         """Workload pebble ready."""
@@ -200,35 +183,37 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
+    @requires_state
+    def _create_token_secret(self, event):
+        if not self._state.token_secret_id:
+            token = secrets.token_urlsafe(32)
+            content = {"token": token}
+            secret = self.app.add_secret(content)
+            self._state.token_secret_id = secret.id
+            logger.info("created token secret {}".format(secret.id))
+
+    @must_be_leader
+    @requires_state
     def _on_leader_elected(self, event):
         """Leader elected."""
-        if self.unit.is_leader():
-            try:
-                # generate token if one is not present in the application
-                # data bucket of the peer relation
-                if not self.state.get(STATE_KEY_TOKEN):
-                    token = secrets.token_urlsafe(32)
-                    self.state.set(STATE_KEY_TOKEN, token)
 
-                # generate the private key if one is not present in the
-                # application data bucket of the peer relation
-                if not self.state.get(STATE_KEY_PRIVATE_KEY):
-                    private_key: bytes = generate_private_key(key_size=4096)
-                    self.state.set(STATE_KEY_PRIVATE_KEY, private_key.decode())
+        self._create_token_secret(event)
 
-            except RelationNotReadyError:
-                event.defer()
-                return
+        # generate the private key if one is not present in the
+        # application data bucket of the peer relation
+        if not self._state.private_key:
+            private_key: bytes = generate_private_key(key_size=4096)
+            self._state.private_key = private_key.decode()
+
         self._update_workload(event)
 
+    @requires_state
     def _update_workload(self, event):
         """' Update workload with all available configuration
         data."""
 
         # Quickly update logrotates config each workload update
-        self._push_to_workload(
-            LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event
-        )
+        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
 
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
@@ -237,31 +222,28 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
+        self._create_token_secret(event)
+
+        # Quickly update logrotates config each workload update
+        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
+
         dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
             self.unit.name.replace("/", "-"), self.app.name, self.model.name
         )
-        try:
-            if self.state.get(STATE_KEY_DNS_NAME):
-                dnsname = self.state.get(STATE_KEY_DNS_NAME)
+        if self._state.dns_name:
+            dnsname = self._state.dns_name
 
-            # check if the database connection string has been
-            # recorded in the peer relation's application data bucket
-            if not self.state.get(STATE_KEY_DB_URI):
-                logger.info("waiting for postgresql relation")
-                self.unit.status = BlockedStatus(
-                    "Waiting for postgresql relation"
-                )
-                return
+        # check if the database connection string has been
+        # recorded in the peer relation's application data bucket
+        if not self._state.db_uri:
+            logger.info("waiting for postgresql relation")
+            self.unit.status = BlockedStatus("Waiting for postgresql relation")
+            return
 
-            # check if the schema has been upgraded
-            if not self.state.get(STATE_KEY_SCHEMA_CREATED):
-                logger.info("waiting for schema upgrade")
-                self.unit.status = BlockedStatus(
-                    "Please run schema-upgrade action"
-                )
-                return
-        except RelationNotReadyError:
-            event.defer()
+        # check if the schema has been upgraded
+        if not self._state.schema_created:
+            logger.info("waiting for schema upgrade")
+            self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
 
         # if openfga relation exists, make sure the address is
@@ -269,49 +251,33 @@ class OpenFGAOperatorCharm(CharmBase):
         if self.unit.is_leader():
             openfga_relation = self.model.get_relation("openfga")
             if openfga_relation and self.app in openfga_relation.data:
-                old_address = openfga_relation.data[self.app].get(
-                    "address", ""
-                )
+                old_address = openfga_relation.data[self.app].get("address", "")
                 new_address = self._get_address(openfga_relation)
                 if old_address != new_address:
-                    openfga_relation.data[self.app].update(
-                        {"address": new_address}
-                    )
+                    openfga_relation.data[self.app].update({"address": new_address})
                 old_dns = openfga_relation.data[self.app].get("dns-name")
                 if old_dns != dnsname:
-                    openfga_relation.data[self.app].update(
-                        {"dns-name": dnsname}
-                    )
+                    openfga_relation.data[self.app].update({"dns-name": dnsname})
 
         env_vars = map_config_to_env_vars(self)
         env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-        env_vars["OPENFGA_DATASTORE_URI"] = self.state.get(STATE_KEY_DB_URI)
+        env_vars["OPENFGA_DATASTORE_URI"] = self._state.db_uri
 
-        token = ""
-        try:
-            token = self.state.get(STATE_KEY_TOKEN)
-            if token:
-                env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
-                env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = self.state.get(
-                    STATE_KEY_TOKEN
-                )
+        secret = self.model.get_secret(id=self._state.token_secret_id)
+        secret_content = secret.get_content()
+        env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
+        env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = secret_content["token"]
 
-            certificate = self.state.get(STATE_KEY_CERTIFICATE)
-            key = self.state.get(STATE_KEY_PRIVATE_KEY)
-            if certificate and key:
-                container.push(
-                    "/app/certificate.pem", certificate, make_dirs=True
-                )
-                container.push("/app/key.pem", key, make_dirs=True)
-                env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
-                env_vars["OPENFGA_HTTP_TLS_CERT"] = "/app/certificate.pem"
-                env_vars["OPENFGA_HTTP_TLS_KEY"] = "/app/key.pem"
-                env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
-                env_vars["OPENFGA_GRPC_TLS_CERT"] = "/app/certificate.pem"
-                env_vars["OPENFGA_GRPC_TLS_KEY"] = "/app/key.pem"
-        except RelationNotReadyError:
-            logger.info("could not information from the peer relation state")
+        if self._state.certificate and self._state.private_key:
+            container.push("/app/certificate.pem", self._state.certificate, make_dirs=True)
+            container.push("/app/key.pem", self._state.private_key, make_dirs=True)
+            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_HTTP_TLS_CERT"] = "/app/certificate.pem"
+            env_vars["OPENFGA_HTTP_TLS_KEY"] = "/app/key.pem"
+            env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_GRPC_TLS_CERT"] = "/app/certificate.pem"
+            env_vars["OPENFGA_GRPC_TLS_KEY"] = "/app/key.pem"
 
         env_vars = {key: value for key, value in env_vars.items() if value}
         for setting in REQUIRED_SETTINGS:
@@ -355,46 +321,50 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
+    def _on_peer_relation_changed(self, event):
+        self._update_workload(event)
+
+    @must_be_leader
+    @requires_state
     def _on_database_event(self, event: DatabaseEvent) -> None:
         """Database event handler."""
+
         # get the first endpoint from a comma separate list
         ep = event.endpoints.split(",", 1)[0]
         # compose the db connection string
         uri = f"postgresql://{event.username}:{event.password}@{ep}/openfga"
 
         # record the connection string
-        try:
-            self.state.set(STATE_KEY_DB_URI, uri)
-        except RelationNotReadyError:
-            event.defer()
-            return
+        self._state.db_uri = uri
 
         self._update_workload(event)
 
+    @must_be_leader
+    @requires_state
     def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
         """Database relation broken handler."""
+
         # when the database relation is broken, we unset the
         # connection string and schema-created from the application
         # bucket of the peer relation
-        try:
-            self.state.unset(STATE_KEY_DB_URI, STATE_KEY_SCHEMA_CREATED)
-        except RelationNotReadyError:
-            event.defer()
-            return
+        del self._state.db_uri
+        del self._state.schema_created
+
         self._update_workload(event)
 
-    def _ready(self):
+    def _ready(self) -> bool:
         container = self.unit.get_container(WORKLOAD_CONTAINER)
 
-        if not self.state.get(STATE_KEY_DB_URI):
-            self.unit.status = BlockedStatus("Waiting for postgresql relation")
-            return
+        if not self._state.is_ready():
+            return False
 
-        if not self.state.get(STATE_KEY_SCHEMA_CREATED):
-            self.unit.status = BlockedStatus(
-                "Please run schema-upgrade action"
-            )
-            return
+        if not self._state.db_uri:
+            self.unit.status = BlockedStatus("Waiting for postgresql relation")
+            return False
+
+        if not self._state.schema_created:
+            self.unit.status = BlockedStatus("Please run schema-upgrade action")
+            return False
 
         if container.can_connect():
             plan = container.get_plan()
@@ -417,19 +387,13 @@ class OpenFGAOperatorCharm(CharmBase):
             return True
         else:
             logger.debug("cannot connect to workload container")
-            self.unit.status = WaitingStatus(
-                "waiting for the OpenFGA workload"
-            )
+            self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
             return False
 
+    @must_be_leader
+    @requires_state
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
         """OpenFGA relation changed."""
-        if not self.unit.is_leader():
-            return
-
-        if not self._ready():
-            event.defer()
-            return
 
         # the requires side will put the store_name in its
         # application bucket
@@ -437,25 +401,22 @@ class OpenFGAOperatorCharm(CharmBase):
         if not store_name:
             return
 
-        token = ""
         dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
             self.unit.name.replace("/", "-"), self.app.name, self.model.name
         )
-        store_id = ""
-        try:
-            t = self.state.get(STATE_KEY_TOKEN)
-            if t:
-                token = t
+        if self._state.dns_name:
+            dnsname = self._state.dns_name
 
-            dns = self.state.get(STATE_KEY_DNS_NAME)
-            if dns:
-                dnsname = dns
-
-            logger.info("creating store {}".format(store_name))
-            store_id = self._create_openfga_store(store_name)
-        except RelationNotReadyError:
+        if not self._state.token_secret_id:
             event.defer()
+            logger.info("token secret not created yet")
             return
+
+        secret = self.model.get_secret(id=self._state.token_secret_id)
+        secret.grant(event.relation)
+
+        logger.info("creating store {}".format(store_name))
+        store_id = self._create_openfga_store(store_name)
 
         if not store_id:
             logger.error("failed to create the openfga store")
@@ -465,7 +426,7 @@ class OpenFGAOperatorCharm(CharmBase):
         # to connect to OpenFga
         data = {
             "store_id": store_id,
-            "token": token,
+            "token_secret_id": secret.id,
             "address": self._get_address(event.relation),
             "scheme": "http",
             "port": "8080",
@@ -478,9 +439,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _get_address(self, relation: Relation):
         """Returns the ip address to be used with the specified relation."""
-        return self.model.get_binding(
-            relation
-        ).network.ingress_address.exploded
+        return self.model.get_binding(relation).network.ingress_address.exploded
 
     def _create_openfga_store(self, store_name: str):
         logger.info("creating store: {}".format(store_name))
@@ -489,7 +448,9 @@ class OpenFGAOperatorCharm(CharmBase):
 
         headers = {}
 
-        token = self.state.get(STATE_KEY_TOKEN)
+        secret = self.model.get_secret(id=self._state.token_secret_id)
+        secret_content = secret.get_content()
+        token = secret_content.get("token", "")
         if token:
             headers = {"Authorization": "Bearer {}".format(token)}
 
@@ -528,9 +489,7 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         return ""
 
-    def _list_stores(
-        self, openfga_host: str, headers, continuation_token=""
-    ) -> list:
+    def _list_stores(self, openfga_host: str, headers, continuation_token="") -> list:
         # to list stores we need to issue a GET request to the /stores
         # endpoint
         response: Response = requests.get(
@@ -539,9 +498,7 @@ class OpenFGAOperatorCharm(CharmBase):
             verify=False,
         )
         if response.status_code != 200:
-            logger.error(
-                "to list existing openfga store: {}".format(response.json())
-            )
+            logger.error("to list existing openfga store: {}".format(response.json()))
             return None
 
         data = response.json()
@@ -564,28 +521,19 @@ class OpenFGAOperatorCharm(CharmBase):
                 )
             )
 
+    @must_be_leader
+    @requires_state
     def _on_schema_upgrade_action(self, event):
         """Performs a schema upgrade on the configurable database"""
-        if not self.unit.is_leader():
-            event.set_results({"error": "unit is not the leader"})
-            return
 
-        db_uri = ""
-        try:
-            db_uri = self.state.get(STATE_KEY_DB_URI)
-        except RelationNotReadyError:
-            event.defer()
-            return
-
+        db_uri = self._state.db_uri
         if not db_uri:
             event.set_results({"error": "missing postgres relation"})
             return
 
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if not container.can_connect():
-            event.set_results(
-                {"error": "cannot connect to the workload container"}
-            )
+            event.set_results({"error": "cannot connect to the workload container"})
             return
 
         migration_process = container.exec(
@@ -606,168 +554,114 @@ class OpenFGAOperatorCharm(CharmBase):
             event.set_results({"result": "done"})
         except ExecError as e:
             if "already exists" in e.stderr:
-                logger.info(
-                    "schema migration failed because the schema already exists"
-                )
+                logger.info("schema migration failed because the schema already exists")
                 self.unit.status = WaitingStatus("Schema migration done")
                 event.set_results({"result": "done"})
             else:
                 logger.error(
-                    "failed to run schema migration: err {} db_uri {}".format(
-                        e.stderr, db_uri
-                    )
+                    "failed to run schema migration: err {} db_uri {}".format(e.stderr, db_uri)
                 )
-                event.set_results(
-                    {"std-err": e.stderr, "std-out": stdout, "db_uri": db_uri}
-                )
-
-        try:
-            self.state.set(STATE_KEY_SCHEMA_CREATED, "true")
-        except RelationNotReadyError:
-            event.defer()
-            return
+                event.set_results({"std-err": e.stderr, "std-out": stdout, "db_uri": db_uri})
+        self._state.schema_created = "true"
 
         logger.info("schema upgraded")
         self._update_workload(event)
 
-    def _on_certificates_relation_joined(
-        self, event: RelationJoinedEvent
-    ) -> None:
-        if not self.unit.is_leader():
-            return
-
-        peer_relation = self.model.get_relation("openfga-peer")
-        if not peer_relation:
-            self.unit.status = WaitingStatus(
-                "Waiting for peer relation to be created"
-            )
-            event.defer()
-            return
-
+    @must_be_leader
+    @requires_state
+    def _on_certificates_relation_joined(self, event: RelationJoinedEvent) -> None:
         dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
             self.unit.name.replace("/", "-"), self.app.name, self.model.name
         )
-        try:
-            if self.state.get(STATE_KEY_DNS_NAME):
-                dnsname = self.state.get(STATE_KEY_DNS_NAME)
 
-            private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
-            csr = generate_csr(
-                private_key=private_key.encode(),
-                subject=dnsname,
-            )
-            self.state.set(STATE_KEY_CSR, csr.decode())
-        except RelationNotReadyError:
-            event.defer()
-            return
+        if self._state.dns_name:
+            dnsname = self._state.dns_name
 
-        self.certificates.request_certificate_creation(
-            certificate_signing_request=csr
+        private_key = self._state.private_key
+        csr = generate_csr(
+            private_key=private_key.encode(),
+            subject=dnsname,
         )
+        self._state.csr = csr.decode()
 
-    def _on_certificate_available(
-        self, event: CertificateAvailableEvent
-    ) -> None:
-        if not self.unit.is_leader():
-            try:
-                self.state.set(STATE_KEY_CERTIFICATE, event.certificate)
-                self.state.set(STATE_KEY_CA, event.ca)
-                self.state.set(STATE_KEY_CHAIN, event.chain)
-            except RelationNotReadyError:
-                event.defer()
-                return
+        self.certificates.request_certificate_creation(certificate_signing_request=csr)
+
+    @must_be_leader
+    @requires_state
+    def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:
+        self._state.certificate = event.certificate
+        self._state.ca = event.ca
+        self._state.key_chain = event.chain
+
         self._update_workload(event)
 
-    def _on_certificate_expiring(
-        self, event: CertificateExpiringEvent
-    ) -> None:
-        if not self.unit.is_leader():
-            old_csr = ""
-            private_key = ""
-            try:
-                old_csr = self.state.get(STATE_KEY_CSR)
-                private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
-            except RelationNotReadyError:
-                event.defer()
-                return
+    @must_be_leader
+    @requires_state
+    def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
+        old_csr = self._state.csr
+        private_key = self._state.private_key
 
-            dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-                self.unit.name.replace("/", "-"),
-                self.app.name,
-                self.model.name,
-            )
-            if self.state.get(STATE_KEY_DNS_NAME):
-                dnsname = self.state.get(STATE_KEY_DNS_NAME)
+        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+            self.unit.name.replace("/", "-"),
+            self.app.name,
+            self.model.name,
+        )
+        if self._state.dns_name:
+            dnsname = self._state.dns_name
 
-            new_csr = generate_csr(
-                private_key=private_key.encode(), subject=dnsname
-            )
-            self.certificates.request_certificate_renewal(
-                old_certificate_signing_request=old_csr,
-                new_certificate_signing_request=new_csr,
-            )
-            try:
-                self.state.set(STATE_KEY_CSR, new_csr.decode())
-            except RelationNotReadyError:
-                event.defer()
-                return
+        new_csr = generate_csr(private_key=private_key.encode(), subject=dnsname)
+        self.certificates.request_certificate_renewal(
+            old_certificate_signing_request=old_csr,
+            new_certificate_signing_request=new_csr,
+        )
+
+        self._state.csr = new_csr.decode()
 
         self._update_workload()
 
+    @must_be_leader
+    @requires_state
     def _on_certificate_revoked(self, event: CertificateRevokedEvent) -> None:
-        if not self.unit.is_leader():
-            old_csr = ""
-            private_key = ""
-            try:
-                old_csr = self.state.get(STATE_KEY_CSR)
-                private_key = self.state.get(STATE_KEY_PRIVATE_KEY)
+        old_csr = self._state.csr
+        private_key = self._state.private_key
 
-                dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-                    self.unit.name.replace("/", "-"),
-                    self.app.name,
-                    self.model.name,
-                )
-                if self.state.get(STATE_KEY_DNS_NAME):
-                    dnsname = self.state.get(STATE_KEY_DNS_NAME)
+        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
+            self.unit.name.replace("/", "-"),
+            self.app.name,
+            self.model.name,
+        )
+        if self._state.dns_name:
+            dnsname = self._state.dns_name
 
-                new_csr = generate_csr(
-                    private_key=private_key.encode(),
-                    subject=dnsname,
-                )
-                self.certificates.request_certificate_renewal(
-                    old_certificate_signing_request=old_csr,
-                    new_certificate_signing_request=new_csr,
-                )
+        new_csr = generate_csr(
+            private_key=private_key.encode(),
+            subject=dnsname,
+        )
+        self.certificates.request_certificate_renewal(
+            old_certificate_signing_request=old_csr,
+            new_certificate_signing_request=new_csr,
+        )
 
-                self.state.set(STATE_KEY_CSR, new_csr.decode())
-                self.state.unset(
-                    STATE_KEY_CERTIFICATE, STATE_KEY_CA, STATE_KEY_CHAIN
-                )
-            except RelationNotReadyError:
-                event.defer()
-                return
+        self._state.csr = new_csr.decode()
+        del self._state.certificate
+        del self._state.ca
+        del self._state.key_chain
 
         self.unit.status = WaitingStatus("Waiting for new certificate")
 
         self._update_workload()
 
+    @must_be_leader
+    @requires_state
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
-        if self.unit.is_leader():
-            try:
-                self.state.set(STATE_KEY_DNS_NAME, event.url)
-            except RelationNotReadyError:
-                event.defer()
-                return
+        self._state.dns_name = event.url
 
         self._update_workload(event)
 
+    @must_be_leader
+    @requires_state
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
-        if self.unit.is_leader():
-            try:
-                self.state.unset(STATE_KEY_DNS_NAME)
-            except RelationNotReadyError:
-                event.defer()
-                return
+        del self._state.dns_name
 
         self._update_workload(event)
 
@@ -789,9 +683,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
-            logger.info(
-                "pushing file {} to the workload container".format(filename)
-            )
+            logger.info("pushing file {} to the workload container".format(filename))
             container.push(filename, content, make_dirs=True)
         else:
             logger.info("workload container not ready - defering")
@@ -803,8 +695,7 @@ def map_config_to_env_vars(charm, **additional_env):
     variables such that they can be passed directly to the pebble layer.
     """
     env_mapped_config = {
-        "OPENFGA_{}".format(k.replace("-", "_").upper()): v
-        for k, v in charm.config.items()
+        "OPENFGA_{}".format(k.replace("-", "_").upper()): v for k, v in charm.config.items()
     }
 
     return {**env_mapped_config, **additional_env}

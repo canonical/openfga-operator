@@ -6,7 +6,7 @@ This repository contains a [Juju Charm](https://charmhub.io/openfga-k8s) for dep
 
 ## Usage
 
-Bootstrap a [microk8s controller](https://juju.is/docs/olm/microk8s) using juju `3.1` and create a new Juju model:
+Bootstrap a [microk8s controller](https://juju.is/docs/olm/microk8s) using juju `3.2` and create a new Juju model:
 
 ```shell
 juju add-model openfga

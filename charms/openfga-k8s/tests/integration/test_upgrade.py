@@ -38,9 +38,7 @@ async def test_upgrade_running_application(ops_test: OpsTest):
             channel="edge",
             series="jammy",
         ),
-        ops_test.model.deploy(
-            "postgresql-k8s", application_name="postgresql", channel="edge"
-        ),
+        ops_test.model.deploy("postgresql-k8s", application_name="postgresql", channel="edge"),
         ops_test.model.deploy(
             test_charm,
             application_name="openfga-requires",
@@ -60,17 +58,11 @@ async def test_upgrade_running_application(ops_test: OpsTest):
     await ops_test.model.integrate(APP_NAME, "postgresql:database")
 
     logger.debug("running schema-upgrade action")
-    openfga_unit = await utils.get_unit_by_name(
-        APP_NAME, "0", ops_test.model.units
-    )
+    openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
     for i in range(10):
         action: Action = await openfga_unit.run_action("schema-upgrade")
         result = await action.wait()
-        logger.info(
-            "attempt {} -> action result {} {}".format(
-                i, result.status, result.results
-            )
-        )
+        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
         if result.results == {"result": "done", "return-code": 0}:
             break
         time.sleep(2)
@@ -96,9 +88,7 @@ async def test_upgrade_running_application(ops_test: OpsTest):
     openfga_requires_unit = await utils.get_unit_by_name(
         "openfga-requires", "0", ops_test.model.units
     )
-    assert (
-        "running with store" in openfga_requires_unit.workload_status_message
-    )
+    assert "running with store" in openfga_requires_unit.workload_status_message
 
     # Starting upgrade/refresh
     logger.debug("starting upgrade test")
@@ -126,13 +116,9 @@ async def test_upgrade_running_application(ops_test: OpsTest):
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
-    upgraded_openfga_unit = await utils.get_unit_by_name(
-        APP_NAME, "0", ops_test.model.units
-    )
+    upgraded_openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
 
-    health = await upgraded_openfga_unit.run(
-        "curl -s http://localhost:8080/healthz"
-    )
+    health = await upgraded_openfga_unit.run("curl -s http://localhost:8080/healthz")
     await health.wait()
     assert health.results.get("return-code") == 0
     assert health.results.get("stdout").strip() == '{"status":"SERVING"}'
