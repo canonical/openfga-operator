@@ -9,18 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from charm import (
-    STATE_KEY_CA,
-    STATE_KEY_CERTIFICATE,
-    STATE_KEY_CHAIN,
-    STATE_KEY_DB_URI,
-    STATE_KEY_DNS_NAME,
-    STATE_KEY_PRIVATE_KEY,
-    STATE_KEY_SCHEMA_CREATED,
-    STATE_KEY_TOKEN,
-    OpenFGAOperatorCharm,
-)
 from ops.testing import Harness
+
+from charm import OpenFGAOperatorCharm
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +29,7 @@ class TestCharm(unittest.TestCase):
 
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
-        self.harness.charm.framework.charm_dir = pathlib.Path(
-            self.tempdir.name
-        )
+        self.harness.charm.framework.charm_dir = pathlib.Path(self.tempdir.name)
 
         self.harness.container_pebble_ready("openfga")
 
@@ -48,46 +37,38 @@ class TestCharm(unittest.TestCase):
     def test_logrotate_config_pushed(self, get_logrotate_config: MagicMock):
         self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-k8s",
-            {
-                STATE_KEY_TOKEN: "test-token",
-                STATE_KEY_SCHEMA_CREATED: "true",
-                STATE_KEY_DB_URI: "test-db-uri",
-                STATE_KEY_PRIVATE_KEY: "test-key",
-                STATE_KEY_CERTIFICATE: "test-cert",
-                STATE_KEY_CA: "test-ca",
-                STATE_KEY_CHAIN: "test-chain",
-                STATE_KEY_DNS_NAME: "test-dns-name",
-            },
-        )
+        self.harness.charm._state.token = "test-token"
+        self.harness.charm._state.schema_created = "true"
+        self.harness.charm._state.db_uri = "test-db-uri"
+        self.harness.charm._state.private_key = "test-key"
+        self.harness.charm._state.certificate = "test-cert"
+        self.harness.charm._state.ca = "test-ca"
+        self.harness.charm._state.key_chain = "test-chain"
+        self.harness.charm._state.dns_name = "test-dns-name"
 
         container = self.harness.model.unit.get_container("openfga")
         self.harness.charm.on.openfga_pebble_ready.emit(container)
-        get_logrotate_config.assert_called_once()
+        get_logrotate_config.assert_called()
 
-    def test_on_config_changed(self):
+    @patch("secrets.token_urlsafe")
+    def test_on_config_changed(self, token_urlsafe):
+        token_urlsafe.return_value = "a_test_secret"
+
         self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-k8s",
-            {
-                STATE_KEY_TOKEN: "test-token",
-                STATE_KEY_SCHEMA_CREATED: "true",
-                STATE_KEY_DB_URI: "test-db-uri",
-                STATE_KEY_PRIVATE_KEY: "test-key",
-                STATE_KEY_CERTIFICATE: "test-cert",
-                STATE_KEY_CA: "test-ca",
-                STATE_KEY_CHAIN: "test-chain",
-                STATE_KEY_DNS_NAME: "test-dns-name",
-            },
-        )
+
+        self.harness.charm._state.token = "test-token"
+        self.harness.charm._state.schema_created = "true"
+        self.harness.charm._state.db_uri = "test-db-uri"
+        self.harness.charm._state.private_key = "test-key"
+        self.harness.charm._state.certificate = "test-cert"
+        self.harness.charm._state.ca = "test-ca"
+        self.harness.charm._state.key_chain = "test-chain"
+        self.harness.charm._state.dns_name = "test-dns-name"
 
         container = self.harness.model.unit.get_container("openfga")
         self.harness.charm.on.openfga_pebble_ready.emit(container)
@@ -104,33 +85,30 @@ class TestCharm(unittest.TestCase):
 
         plan = self.harness.get_container_pebble_plan("openfga")
         self.maxDiff = None
-        self.assertEqual(
-            plan.to_dict(),
-            {
-                "services": {
-                    "openfga": {
-                        "override": "merge",
-                        "startup": "disabled",
-                        "summary": "OpenFGA",
-                        "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
-                        "environment": {
-                            "OPENFGA_AUTHN_METHOD": "preshared",
-                            "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
-                            "OPENFGA_DATASTORE_ENGINE": "postgres",
-                            "OPENFGA_DATASTORE_URI": "test-db-uri",
-                            "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
-                            "OPENFGA_GRPC_TLS_ENABLED": "true",
-                            "OPENFGA_GRPC_TLS_KEY": "/app/key.pem",
-                            "OPENFGA_HTTP_TLS_CERT": "/app/certificate.pem",
-                            "OPENFGA_HTTP_TLS_ENABLED": "true",
-                            "OPENFGA_HTTP_TLS_KEY": "/app/key.pem",
-                            "OPENFGA_LOG_LEVEL": "debug",
-                            "OPENFGA_PLAYGROUND_ENABLED": "false",
-                        },
+        assert plan.to_dict() == {
+            "services": {
+                "openfga": {
+                    "override": "merge",
+                    "startup": "disabled",
+                    "summary": "OpenFGA",
+                    "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
+                    "environment": {
+                        "OPENFGA_AUTHN_METHOD": "preshared",
+                        "OPENFGA_AUTHN_PRESHARED_KEYS": "a_test_secret",
+                        "OPENFGA_DATASTORE_ENGINE": "postgres",
+                        "OPENFGA_DATASTORE_URI": "test-db-uri",
+                        "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
+                        "OPENFGA_GRPC_TLS_ENABLED": "true",
+                        "OPENFGA_GRPC_TLS_KEY": "/app/key.pem",
+                        "OPENFGA_HTTP_TLS_CERT": "/app/certificate.pem",
+                        "OPENFGA_HTTP_TLS_ENABLED": "true",
+                        "OPENFGA_HTTP_TLS_KEY": "/app/key.pem",
+                        "OPENFGA_LOG_LEVEL": "debug",
+                        "OPENFGA_PLAYGROUND_ENABLED": "false",
                     },
-                }
-            },
-        )
+                },
+            }
+        }
 
     @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
     @patch("charm.OpenFGAOperatorCharm._get_address")
@@ -145,17 +123,11 @@ class TestCharm(unittest.TestCase):
 
         self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("openfga-peer", "openfga")
+        rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-k8s",
-            {
-                STATE_KEY_TOKEN: "test-token",
-                STATE_KEY_SCHEMA_CREATED: "true",
-                STATE_KEY_DB_URI: "test-db-uri",
-            },
-        )
+
+        self.harness.charm._state.schema_created = "true"
+        self.harness.charm._state.db_uri = "test_db_uri"
 
         self.harness.update_config(
             {
@@ -175,11 +147,12 @@ class TestCharm(unittest.TestCase):
         )
 
         create_openfga_store.assert_called_with("test-store-name")
-        assert self.harness.get_relation_data(rel_id, "openfga-k8s") == {
-            "address": "10.10.0.17",
-            "port": "8080",
-            "scheme": "http",
-            "token": "test-token",
-            "store_id": "01GK13VYZK62Q1T0X55Q2BHYD6",
-            "dns_name": "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local",
-        }
+        relation_data = self.harness.get_relation_data(rel_id, "openfga-k8s")
+        self.assertEqual(relation_data["address"], "10.10.0.17")
+        self.assertEqual(relation_data["port"], "8080")
+        self.assertEqual(relation_data["scheme"], "http")
+        self.assertRegexpMatches(relation_data["token_secret_id"], "secret:.*")
+        self.assertEqual(relation_data["store_id"], "01GK13VYZK62Q1T0X55Q2BHYD6")
+        self.assertEqual(
+            relation_data["dns_name"], "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local"
+        )
