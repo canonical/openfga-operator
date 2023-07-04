@@ -20,7 +20,10 @@ import logging
 import secrets
 
 import requests
-from charms.data_platform_libs.v0.database_requires import DatabaseEvent, DatabaseRequires
+from charms.data_platform_libs.v0.database_requires import (
+    DatabaseEvent,
+    DatabaseRequires,
+)
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
@@ -40,18 +43,21 @@ from charms.traefik_k8s.v1.ingress import (
 )
 from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
+from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
-
-from state import State, requires_state
+from state import State, requires_state, requires_state_setter
 
 logger = logging.getLogger(__name__)
 
 WORKLOAD_CONTAINER = "openfga"
 
-REQUIRED_SETTINGS = ["OPENFGA_DATASTORE_URI"]
+REQUIRED_SETTINGS = [
+    "OPENFGA_DATASTORE_URI",
+    "OPENFGA_AUTHN_PRESHARED_KEYS",
+]
 
 LOG_FILE = "/var/log/openfga-k8s"
 LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
@@ -62,17 +68,6 @@ LOG_FILE = "/var/log/openfga-k8s"
 LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 
 OPENFGA_SERVER_PORT = 8080
-
-
-def must_be_leader(func):
-    @functools.wraps(func)
-    def wrapper(ref, event):
-        if ref.unit.is_leader():
-            return func(ref, event)
-        else:
-            return
-
-    return wrapper
 
 
 class OpenFGAOperatorCharm(CharmBase):
@@ -183,21 +178,34 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    @requires_state
-    def _create_token_secret(self, event):
-        if not self._state.token_secret_id:
-            token = secrets.token_urlsafe(32)
-            content = {"token": token}
-            secret = self.app.add_secret(content)
-            self._state.token_secret_id = secret.id
-            logger.info("created token secret {}".format(secret.id))
+    @requires_state_setter
+    def _create_token(self, event):
+        token = secrets.token_urlsafe(32)
+        if JujuVersion.from_environ().has_secrets:
+            if not self._state.token_secret_id:
+                content = {"token": token}
+                secret = self.app.add_secret(content)
+                self._state.token_secret_id = secret.id
+                logger.info("created token secret {}".format(secret.id))
+        else:
+            if not self._state.token:
+                self._state.token = token
 
-    @must_be_leader
     @requires_state
+    def _get_token(self, event):
+        if JujuVersion.from_environ().has_secrets:
+            if self._state.token_secret_id:
+                secret = self.model.get_secret(id=self._state.token_secret_id)
+                secret_content = secret.get_content()
+                return secret_content["token"]
+            else:
+                return None
+        else:
+            return self._state.token
+
+    @requires_state_setter
     def _on_leader_elected(self, event):
         """Leader elected."""
-
-        self._create_token_secret(event)
 
         # generate the private key if one is not present in the
         # application data bucket of the peer relation
@@ -222,7 +230,7 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
-        self._create_token_secret(event)
+        self._create_token(event)
 
         # Quickly update logrotates config each workload update
         self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
@@ -264,10 +272,10 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
         env_vars["OPENFGA_DATASTORE_URI"] = self._state.db_uri
 
-        secret = self.model.get_secret(id=self._state.token_secret_id)
-        secret_content = secret.get_content()
-        env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
-        env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = secret_content["token"]
+        token = self._get_token(event)
+        if token:
+            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
+            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
 
         if self._state.certificate and self._state.private_key:
             container.push("/app/certificate.pem", self._state.certificate, make_dirs=True)
@@ -324,8 +332,7 @@ class OpenFGAOperatorCharm(CharmBase):
     def _on_peer_relation_changed(self, event):
         self._update_workload(event)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_database_event(self, event: DatabaseEvent) -> None:
         """Database event handler."""
 
@@ -339,8 +346,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload(event)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
         """Database relation broken handler."""
 
@@ -390,8 +396,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
             return False
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
         """OpenFGA relation changed."""
 
@@ -407,52 +412,46 @@ class OpenFGAOperatorCharm(CharmBase):
         if self._state.dns_name:
             dnsname = self._state.dns_name
 
-        if not self._state.token_secret_id:
+        token = self._get_token(event)
+        if not token:
+            logger.error("token not found")
             event.defer()
-            logger.info("token secret not created yet")
             return
 
-        secret = self.model.get_secret(id=self._state.token_secret_id)
-        secret.grant(event.relation)
-
-        logger.info("creating store {}".format(store_name))
-        store_id = self._create_openfga_store(store_name)
-
+        store_id = self._create_openfga_store(token, store_name)
         if not store_id:
-            logger.error("failed to create the openfga store")
+            logger.error("failed to create openfga store")
             return
 
         # update the relation data with information needed
         # to connect to OpenFga
         data = {
             "store_id": store_id,
-            "token_secret_id": secret.id,
             "address": self._get_address(event.relation),
             "scheme": "http",
             "port": "8080",
+            "dns_name": dnsname,
         }
-        if dnsname:
-            data["dns_name"] = dnsname
 
-        logger.info("setting openfga relation data {}".format(data))
+        if JujuVersion.from_environ().has_secrets:
+            secret = self.model.get_secret(id=self._state.token_secret_id)
+            secret.grant(event.relation)
+
+            data["token_secret_id"] = self._state.token_secret_id
+        else:
+            data["token"] = self._state.token
+
         event.relation.data[self.app].update(data)
 
     def _get_address(self, relation: Relation):
         """Returns the ip address to be used with the specified relation."""
         return self.model.get_binding(relation).network.ingress_address.exploded
 
-    def _create_openfga_store(self, store_name: str):
+    def _create_openfga_store(self, token: str, store_name: str):
         logger.info("creating store: {}".format(store_name))
 
         address = "http://localhost:8080"
-
-        headers = {}
-
-        secret = self.model.get_secret(id=self._state.token_secret_id)
-        secret_content = secret.get_content()
-        token = secret_content.get("token", "")
-        if token:
-            headers = {"Authorization": "Bearer {}".format(token)}
+        headers = {"Authorization": "Bearer {}".format(token)}
 
         # we need to check if the store with the specified name already
         # exists, otherwise OpenFGA will happily create a new store with
@@ -521,8 +520,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 )
             )
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_schema_upgrade_action(self, event):
         """Performs a schema upgrade on the configurable database"""
 
@@ -567,8 +565,7 @@ class OpenFGAOperatorCharm(CharmBase):
         logger.info("schema upgraded")
         self._update_workload(event)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_certificates_relation_joined(self, event: RelationJoinedEvent) -> None:
         dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
             self.unit.name.replace("/", "-"), self.app.name, self.model.name
@@ -586,8 +583,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.certificates.request_certificate_creation(certificate_signing_request=csr)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:
         self._state.certificate = event.certificate
         self._state.ca = event.ca
@@ -595,8 +591,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload(event)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
         old_csr = self._state.csr
         private_key = self._state.private_key
@@ -619,8 +614,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload()
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_certificate_revoked(self, event: CertificateRevokedEvent) -> None:
         old_csr = self._state.csr
         private_key = self._state.private_key
@@ -651,15 +645,13 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload()
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
         self._state.dns_name = event.url
 
         self._update_workload(event)
 
-    @must_be_leader
-    @requires_state
+    @requires_state_setter
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
         del self._state.dns_name
 
@@ -686,7 +678,7 @@ class OpenFGAOperatorCharm(CharmBase):
             logger.info("pushing file {} to the workload container".format(filename))
             container.push(filename, content, make_dirs=True)
         else:
-            logger.info("workload container not ready - defering")
+            logger.info("workload container not ready - deferring")
             event.defer()
 
 
