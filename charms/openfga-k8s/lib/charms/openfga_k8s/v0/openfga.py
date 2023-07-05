@@ -54,8 +54,13 @@ class SomeCharm(CharmBase):
             secret = self.model.get_secret(id=event.token_secret_id)
             content = secret.get_content()
             # and get the token with content["token"]
+        if event.token:
+            # get the token from event.token
 ```
 
+As you can see the OpenFGA charm will attempt to use Juju secrets to pass the token
+to the requiring charm. However if the Juju version does not support secrets it will
+fall back to passing plaintext token via relation fata.
 """
 
 import logging
