@@ -64,7 +64,7 @@ jobs:
           microk8s-addons: "storage dns rbac registry"
           juju-channel: 3.2/stable
       - name: Create local OCI images
-        run: cd .. && make push-images-microk8s
+        run: cd .. && make push-microk8s
       - name: Run integration tests
         # set a predictable model name so it can be consumed by charm-logdump-action
         run: tox -e integration -- --model testing
