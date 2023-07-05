@@ -72,20 +72,23 @@ class OpenfgaRequiresCharm(CharmBase):
 
         logger.info("store id {}".format(event.store_id))
         logger.info("token_secret_id {}".format(event.token_secret_id))
+        logger.info("token {}".format(event.token))
         logger.info("address {}".format(event.address))
         logger.info("port {}".format(event.port))
         logger.info("scheme {}".format(event.scheme))
+
+        self._state.store_id = event.store_id
+        self._state.address = event.address
+        self._state.port = event.port
+        self._state.scheme = event.scheme
 
         if event.token_secret_id:
             secret = self.model.get_secret(id=event.token_secret_id)
             content = secret.get_content()
             logger.info("secret content {}".format(content))
-
-        self._state.store_id = event.store_id
-        self._state.token_secret_id = event.token_secret_id
-        self._state.address = event.address
-        self._state.port = event.port
-        self._state.scheme = event.scheme
+            self._state.token_secret_id = event.token_secret_id
+        if event.token:
+            self._state.token = token
 
 
 if __name__ == "__main__":  # pragma: nocover

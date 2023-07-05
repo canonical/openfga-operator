@@ -4,14 +4,14 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import logging
+import os
 import pathlib
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from ops.testing import Harness
-
 from charm import OpenFGAOperatorCharm
+from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class TestCharm(unittest.TestCase):
                     "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
                     "environment": {
                         "OPENFGA_AUTHN_METHOD": "preshared",
-                        "OPENFGA_AUTHN_PRESHARED_KEYS": "a_test_secret",
+                        "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
                         "OPENFGA_DATASTORE_ENGINE": "postgres",
                         "OPENFGA_DATASTORE_URI": "test-db-uri",
                         "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
@@ -112,14 +112,17 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
     @patch("charm.OpenFGAOperatorCharm._get_address")
+    @patch("secrets.token_urlsafe")
     def test_on_openfga_relation_joined(
         self,
+        token_urlsafe,
         get_address,
         create_openfga_store,
         *unused,
     ):
         create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
         get_address.return_value = "10.10.0.17"
+        token_urlsafe.return_value = "test-token"
 
         self.harness.set_leader(True)
 
@@ -146,12 +149,63 @@ class TestCharm(unittest.TestCase):
             {"store_name": "test-store-name"},
         )
 
-        create_openfga_store.assert_called_with("test-store-name")
+        create_openfga_store.assert_called_with("test-token", "test-store-name")
         relation_data = self.harness.get_relation_data(rel_id, "openfga-k8s")
         self.assertEqual(relation_data["address"], "10.10.0.17")
         self.assertEqual(relation_data["port"], "8080")
         self.assertEqual(relation_data["scheme"], "http")
-        self.assertRegexpMatches(relation_data["token_secret_id"], "secret:.*")
+        self.assertEqual(relation_data["token"], "test-token")
+        self.assertEqual(relation_data["store_id"], "01GK13VYZK62Q1T0X55Q2BHYD6")
+        self.assertEqual(
+            relation_data["dns_name"], "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local"
+        )
+
+    @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
+    @patch("charm.OpenFGAOperatorCharm._get_address")
+    @patch("secrets.token_urlsafe")
+    @patch.dict(os.environ, {"JUJU_VERSION": "3.2.1"})
+    def test_on_openfga_relation_joined_with_secrets(
+        self,
+        token_urlsafe,
+        get_address,
+        create_openfga_store,
+        *unused,
+    ):
+        create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
+        get_address.return_value = "10.10.0.17"
+        token_urlsafe.return_value = "test-token"
+
+        self.harness.set_leader(True)
+
+        rel_id = self.harness.add_relation("peer", "openfga")
+        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+
+        self.harness.charm._state.schema_created = "true"
+        self.harness.charm._state.db_uri = "test_db_uri"
+
+        self.harness.update_config(
+            {
+                "log-level": "debug",
+            }
+        )
+        self.harness.charm.on.config_changed.emit()
+
+        self.harness.enable_hooks()
+        rel_id = self.harness.add_relation("openfga", "openfga-client")
+        self.harness.add_relation_unit(rel_id, "openfga-client/0")
+
+        self.harness.update_relation_data(
+            rel_id,
+            "openfga-client",
+            {"store_name": "test-store-name"},
+        )
+
+        create_openfga_store.assert_called_with("test-token", "test-store-name")
+        relation_data = self.harness.get_relation_data(rel_id, "openfga-k8s")
+        self.assertEqual(relation_data["address"], "10.10.0.17")
+        self.assertEqual(relation_data["port"], "8080")
+        self.assertEqual(relation_data["scheme"], "http")
+        self.assertRegex(relation_data["token_secret_id"], "secret:.*")
         self.assertEqual(relation_data["store_id"], "01GK13VYZK62Q1T0X55Q2BHYD6")
         self.assertEqual(
             relation_data["dns_name"], "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local"
