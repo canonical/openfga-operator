@@ -14,16 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+"""OpenFGA K8S charm."""
 
-import functools
 import logging
 import secrets
 
 import requests
-from charms.data_platform_libs.v0.database_requires import (
-    DatabaseEvent,
-    DatabaseRequires,
-)
+from charms.data_platform_libs.v0.database_requires import DatabaseEvent, DatabaseRequires
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
@@ -48,6 +45,7 @@ from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
+
 from state import State, requires_state, requires_state_setter
 
 logger = logging.getLogger(__name__)
@@ -206,7 +204,6 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state_setter
     def _on_leader_elected(self, event):
         """Leader elected."""
-
         # generate the private key if one is not present in the
         # application data bucket of the peer relation
         if not self._state.private_key:
@@ -215,11 +212,10 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._update_workload(event)
 
+    # flake8: noqa: C901
     @requires_state
     def _update_workload(self, event):
-        """' Update workload with all available configuration
-        data."""
-
+        """' Update workload with all available configuration data."""
         # Quickly update logrotates config each workload update
         self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
 
@@ -335,7 +331,6 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state_setter
     def _on_database_event(self, event: DatabaseEvent) -> None:
         """Database event handler."""
-
         # get the first endpoint from a comma separate list
         ep = event.endpoints.split(",", 1)[0]
         # compose the db connection string
@@ -349,7 +344,6 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state_setter
     def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
         """Database relation broken handler."""
-
         # when the database relation is broken, we unset the
         # connection string and schema-created from the application
         # bucket of the peer relation
@@ -398,8 +392,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @requires_state_setter
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
-        """OpenFGA relation changed."""
-
+        """Open FGA relation changed."""
         # the requires side will put the store_name in its
         # application bucket
         store_name = event.relation.data[event.app].get("store_name", "")
@@ -522,8 +515,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @requires_state_setter
     def _on_schema_upgrade_action(self, event):
-        """Performs a schema upgrade on the configurable database"""
-
+        """Performs a schema upgrade on the configurable database."""
         db_uri = self._state.db_uri
         if not db_uri:
             event.set_results({"error": "missing postgres relation"})
@@ -665,14 +657,16 @@ class OpenFGAOperatorCharm(CharmBase):
             delaycompress
             missingok
             notifempty
-            size 10M 
+            size 10M
 {"}"}
 """
 
     def _push_to_workload(self, filename, content, event):
-        """Create file on the workload container with
-        the specified content."""
+        """Pushes file to the workload container.
 
+        Create file on the workload container with
+        the specified content.
+        """
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
             logger.info("pushing file {} to the workload container".format(filename))
@@ -683,7 +677,9 @@ class OpenFGAOperatorCharm(CharmBase):
 
 
 def map_config_to_env_vars(charm, **additional_env):
-    """Maps the config values provided in config.yaml into environment
+    """Map config values to environment variables.
+
+    Maps the config values provided in config.yaml into environment
     variables such that they can be passed directly to the pebble layer.
     """
     env_mapped_config = {

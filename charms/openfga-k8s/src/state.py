@@ -8,6 +8,8 @@ import json
 
 
 def requires_state_setter(func):
+    """Wrapper that makes sure peer state is ready and unit is the leader."""
+
     @functools.wraps(func)
     def wrapper(self, event):
         if self.unit.is_leader() and self._state.is_ready():
@@ -19,6 +21,8 @@ def requires_state_setter(func):
 
 
 def requires_state(func):
+    """Wrapper that makes sure peer state is ready."""
+
     @functools.wraps(func)
     def wrapper(self, event):
         if self._state.is_ready():

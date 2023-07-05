@@ -10,8 +10,9 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from charm import OpenFGAOperatorCharm
 from ops.testing import Harness
+
+from charm import OpenFGAOperatorCharm
 
 logger = logging.getLogger(__name__)
 
