@@ -1,7 +1,7 @@
-"""# Interface Library for OpenFGA
+"""Interface Library for OpenFGA.
 
 This library wraps relation endpoints using the `openfga` interface
-and provides a Python API for requesting OpenFGA authorization model 
+and provides a Python API for requesting OpenFGA authorization model
 stores to be created.
 
 ## Getting Started
@@ -112,7 +112,8 @@ class OpenFGAEvent(RelationEvent):
 
 
 class OpenFGAStoreCreateEvent(OpenFGAEvent):
-    """
+    """Store created event.
+
     Event emitted when a new OpenFGA store is created
     for use on this relation.
     """

@@ -17,7 +17,7 @@ import logging
 from charms.openfga_k8s.v0.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.model import ActiveStatus, WaitingStatus
 
 from state import State
 
@@ -88,7 +88,7 @@ class OpenfgaRequiresCharm(CharmBase):
             logger.info("secret content {}".format(content))
             self._state.token_secret_id = event.token_secret_id
         if event.token:
-            self._state.token = token
+            self._state.token = event.token
 
 
 if __name__ == "__main__":  # pragma: nocover

@@ -25,7 +25,6 @@ async def test_upgrade_running_application(ops_test: OpsTest):
 
     Assert on the application status and health check endpoint after upgrade/refresh took place.
     """
-
     # Build charm that requires charm-under-test
     test_charm = await ops_test.build_charm("./tests/charms/openfga_requires/")
 
