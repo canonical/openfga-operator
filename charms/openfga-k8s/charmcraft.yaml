@@ -6,13 +6,12 @@ parts:
   charm:
     charm-python-packages: 
       - setuptools
-      - pyopenssl
-    build-packages:
-      - pkg-config
-      - libffi-dev
-      - libssl-dev
-      - rustc
-      - cargo
+    charm-binary-python-packages:
+      - requests >= 2.25.1
+      - jsonschema >= 3.2.0
+      - cryptography >= 3.4.8
+      - lightkube
+      - lightkube-models
 bases:
   - build-on:
       - name: ubuntu
