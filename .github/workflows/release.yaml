@@ -19,6 +19,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Release any bumped charm libs
+        uses: canonical/charming-actions/release-libraries@2.2.2
+        with:
+          charm-path: "./charms/openfga-k8s"
+          credentials: "${{ secrets.CHARMHUB_TOKEN }}"
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
       - name: Build local images
         run: make build-image
       - name: Upload charm to charmhub
