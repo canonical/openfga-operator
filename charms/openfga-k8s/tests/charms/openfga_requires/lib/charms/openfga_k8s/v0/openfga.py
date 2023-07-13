@@ -1,7 +1,7 @@
-"""Interface Library for OpenFGA.
+"""# Interface Library for OpenFGA
 
 This library wraps relation endpoints using the `openfga` interface
-and provides a Python API for requesting OpenFGA authorization model
+and provides a Python API for requesting OpenFGA authorization model 
 stores to be created.
 
 ## Getting Started
@@ -65,7 +65,12 @@ fall back to passing plaintext token via relation fata.
 
 import logging
 
-from ops.charm import CharmEvents, RelationChangedEvent, RelationEvent, RelationJoinedEvent
+from ops.charm import (
+    CharmEvents,
+    RelationChangedEvent,
+    RelationEvent,
+    RelationJoinedEvent,
+)
 from ops.framework import EventSource, Object
 
 # The unique Charmhub library identifier, never change it
@@ -76,7 +81,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 4
+LIBPATCH = 5
 
 logger = logging.getLogger(__name__)
 
@@ -88,32 +93,31 @@ class OpenFGAEvent(RelationEvent):
 
     @property
     def store_id(self):
-        return self.relation.data[self.relation.app].get("store_id")
+        return self.relation.data[self.relation.app].get("store_id", "")
 
     @property
     def token_secret_id(self):
-        return self.relation.data[self.relation.app].get("token_secret_id")
-
+        return self.relation.data[self.relation.app].get("token_secret_id", "")
+    
     @property
     def token(self):
-        return self.relation.data[self.relation.app].get("token")
+        return self.relation.data[self.relation.app].get("token", "")
 
     @property
     def address(self):
-        return self.relation.data[self.relation.app].get("address")
+        return self.relation.data[self.relation.app].get("address", "")
 
     @property
     def scheme(self):
-        return self.relation.data[self.relation.app].get("scheme")
+        return self.relation.data[self.relation.app].get("scheme", "")
 
     @property
     def port(self):
-        return self.relation.data[self.relation.app].get("port")
+        return self.relation.data[self.relation.app].get("port", "")
 
 
 class OpenFGAStoreCreateEvent(OpenFGAEvent):
-    """Store created event.
-
+    """
     Event emitted when a new OpenFGA store is created
     for use on this relation.
     """
@@ -138,7 +142,9 @@ class OpenFGARequires(Object):
     def __init__(self, charm, store_name: str):
         super().__init__(charm, RELATION_NAME)
 
-        self.framework.observe(charm.on[RELATION_NAME].relation_joined, self._on_relation_joined)
+        self.framework.observe(
+            charm.on[RELATION_NAME].relation_joined, self._on_relation_joined
+        )
         self.framework.observe(
             charm.on[RELATION_NAME].relation_changed,
             self._on_relation_changed,
