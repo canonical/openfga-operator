@@ -20,17 +20,12 @@ APP_NAME = "openfga"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest):
+async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
     """Build the charm-under-test and deploy it together with related charms.
 
     Assert on the unit status before any relations/configurations take place.
     """
-    # Build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
     resources = {"openfga-image": "localhost:32000/openfga:latest"}
-
-    test_charm = await ops_test.build_charm("./tests/charms/openfga_requires/")
-
     # Deploy the charm and wait for active/idle status
     logger.debug("deploying charms")
     await asyncio.gather(
@@ -40,7 +35,9 @@ async def test_build_and_deploy(ops_test: OpsTest):
             application_name=APP_NAME,
             series="jammy",
         ),
-        ops_test.model.deploy("postgresql-k8s", application_name="postgresql", channel="edge"),
+        ops_test.model.deploy(
+            "postgresql-k8s", application_name="postgresql", channel="edge", trust=True
+        ),
         ops_test.model.deploy(
             test_charm,
             application_name="openfga-requires",
