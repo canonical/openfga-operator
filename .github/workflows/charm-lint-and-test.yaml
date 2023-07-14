@@ -1,0 +1,38 @@
+name: Charm Lint and Unit Test
+on:
+  workflow_dispatch:
+  workflow_call:
+  # Run this workflow on PRs to verify basic tests.
+  pull_request:
+
+env:
+  GH_USER: ${{ secrets.GH_USER }}
+  GH_AUTH: ${{ secrets.GH_AUTH }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/openfga-k8s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: python3 -m pip install tox
+      - name: Run linters
+        run: tox -e lint
+  unit-test:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/openfga-k8s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: python3 -m pip install tox
+      - name: Run linters
+        run: tox -e lint
