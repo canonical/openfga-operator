@@ -8,7 +8,7 @@ on:
 
 jobs:
   charm-tests:
-    uses: ./.github/workflows/charm.yaml
+    uses: ./.github/workflows/charm-integration.yaml
 
   release-to-charmhub:
     name: Release to CharmHub

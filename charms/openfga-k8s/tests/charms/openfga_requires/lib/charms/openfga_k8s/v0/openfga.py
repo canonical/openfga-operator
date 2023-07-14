@@ -1,3 +1,4 @@
+# flake8: noqa
 """# Interface Library for OpenFGA
 
 This library wraps relation endpoints using the `openfga` interface
@@ -65,12 +66,7 @@ fall back to passing plaintext token via relation fata.
 
 import logging
 
-from ops.charm import (
-    CharmEvents,
-    RelationChangedEvent,
-    RelationEvent,
-    RelationJoinedEvent,
-)
+from ops.charm import CharmEvents, RelationChangedEvent, RelationEvent, RelationJoinedEvent
 from ops.framework import EventSource, Object
 
 # The unique Charmhub library identifier, never change it
@@ -98,7 +94,7 @@ class OpenFGAEvent(RelationEvent):
     @property
     def token_secret_id(self):
         return self.relation.data[self.relation.app].get("token_secret_id", "")
-    
+
     @property
     def token(self):
         return self.relation.data[self.relation.app].get("token", "")
@@ -142,9 +138,7 @@ class OpenFGARequires(Object):
     def __init__(self, charm, store_name: str):
         super().__init__(charm, RELATION_NAME)
 
-        self.framework.observe(
-            charm.on[RELATION_NAME].relation_joined, self._on_relation_joined
-        )
+        self.framework.observe(charm.on[RELATION_NAME].relation_joined, self._on_relation_joined)
         self.framework.observe(
             charm.on[RELATION_NAME].relation_changed,
             self._on_relation_changed,

@@ -1,0 +1,34 @@
+name: Charm Integration Test
+on:
+  workflow_call:
+  workflow_dispatch:
+
+env:
+    GH_USER: ${{ secrets.GH_USER }}
+    GH_AUTH: ${{ secrets.GH_AUTH }}
+
+jobs:
+  charm-build:
+    uses: ./.github/workflows/charm-lint-and-test.yaml
+
+  integration-test-microk8s:
+    # Note this can be improved by using the built charm as an input into the release process.
+    name: Integration tests (microk8s)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charms/openfga-k8s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup operator environment
+        uses: charmed-kubernetes/actions-operator@1.1.0
+        with:
+          provider: microk8s
+          channel: 1.27-strict/stable
+          microk8s-addons: "storage dns rbac registry"
+          juju-channel: 3.2/stable
+      - name: Create local OCI images
+        run: cd ../.. && make push-microk8s
+      - name: Run integration tests
+        run: tox -e integration
