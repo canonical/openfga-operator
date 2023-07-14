@@ -1,4 +1,4 @@
-name: Charm Lint and Unit Test
+name: Charm Check
 on:
   workflow_dispatch:
   workflow_call:
