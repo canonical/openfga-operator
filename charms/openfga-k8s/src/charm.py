@@ -177,7 +177,8 @@ class OpenFGAOperatorCharm(CharmBase):
                 logger.warning("service not found, won't stop")
                 return
             if service.is_running():
-                container.stop("openfga")
+                container.stop(SERVICE_NAME)
+        self.unit.status = WaitingStatus("service stopped")
 
     def _on_update_status(self, _):
         """Update the status of the charm."""
