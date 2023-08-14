@@ -42,7 +42,7 @@ from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus, ModelError
+from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
 
