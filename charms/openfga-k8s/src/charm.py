@@ -42,7 +42,7 @@ from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, Relation, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
 from ops.pebble import ExecError
 from requests.models import Response
 
@@ -66,6 +66,8 @@ LOG_FILE = "/var/log/openfga-k8s"
 LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 
 OPENFGA_SERVER_PORT = 8080
+
+SERVICE_NAME = "openfga"
 
 
 class OpenFGAOperatorCharm(CharmBase):
@@ -169,8 +171,14 @@ class OpenFGAOperatorCharm(CharmBase):
         """Stop OpenFGA."""
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
-            container.stop("openfga")
-        self._ready()
+            try:
+                service = container.get_service(SERVICE_NAME)
+            except ModelError:
+                logger.warning("service not found, won't stop")
+                return
+            if service.is_running():
+                container.stop(SERVICE_NAME)
+        self.unit.status = WaitingStatus("service stopped")
 
     def _on_update_status(self, _):
         """Update the status of the charm."""
@@ -295,7 +303,7 @@ class OpenFGAOperatorCharm(CharmBase):
             "summary": "openfga layer",
             "description": "pebble layer for openfga",
             "services": {
-                "openfga": {
+                SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
                     "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
@@ -313,10 +321,10 @@ class OpenFGAOperatorCharm(CharmBase):
         }
         container.add_layer("openfga", pebble_layer, combine=True)
         if self._ready():
-            if container.get_service("openfga").is_running():
+            if container.get_service(SERVICE_NAME).is_running():
                 container.replan()
             else:
-                container.start("openfga")
+                container.start(SERVICE_NAME)
             self.unit.status = ActiveStatus()
             if self.unit.is_leader():
                 self.app.status = ActiveStatus()
@@ -368,11 +376,11 @@ class OpenFGAOperatorCharm(CharmBase):
 
         if container.can_connect():
             plan = container.get_plan()
-            if plan.services.get("openfga") is None:
+            if plan.services.get(SERVICE_NAME) is None:
                 self.unit.status = WaitingStatus("waiting for service")
                 return False
 
-            env_vars = plan.services.get("openfga").environment
+            env_vars = plan.services.get(SERVICE_NAME).environment
 
             for setting in REQUIRED_SETTINGS:
                 if not env_vars.get(setting, ""):
@@ -381,7 +389,7 @@ class OpenFGAOperatorCharm(CharmBase):
                     )
                     return False
 
-            if container.get_service("openfga").is_running():
+            if container.get_service(SERVICE_NAME).is_running():
                 self.unit.status = ActiveStatus()
 
             return True

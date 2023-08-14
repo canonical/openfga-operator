@@ -8,7 +8,7 @@ import os
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from ops.testing import Harness
 
@@ -34,8 +34,7 @@ class TestCharm(unittest.TestCase):
 
         self.harness.container_pebble_ready("openfga")
 
-    @patch("charm.OpenFGAOperatorCharm._get_logrotate_config")
-    def test_logrotate_config_pushed(self, get_logrotate_config: MagicMock):
+    def test_logrotate_config_pushed(self):
         self.harness.set_leader(True)
 
         rel_id = self.harness.add_relation("peer", "openfga")
@@ -51,7 +50,9 @@ class TestCharm(unittest.TestCase):
 
         container = self.harness.model.unit.get_container("openfga")
         self.harness.charm.on.openfga_pebble_ready.emit(container)
-        get_logrotate_config.assert_called()
+        root = self.harness.get_filesystem_root("openfga")
+        config = (root / "etc/logrotate.d/openfga").read_text()
+        self.assertIn("/var/log/openfga-k8s {", config)
 
     @patch("secrets.token_urlsafe")
     def test_on_config_changed(self, token_urlsafe):
