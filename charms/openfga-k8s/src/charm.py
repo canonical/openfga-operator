@@ -398,6 +398,16 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
             return False
 
+    def is_openfga_server_running(self) -> bool:
+        container = self.unit.get_container(WORKLOAD_CONTAINER)
+        if not container.can_connect():
+            logger.error(f"Cannot connect to container {WORKLOAD_CONTAINER}")
+            return False
+        if not container.get_service(SERVICE_NAME).is_running():
+            logger.error(f"{SERVICE_NAME} is not running")
+            return False
+        return True
+
     @requires_state_setter
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
         """Open FGA relation changed."""
@@ -416,6 +426,10 @@ class OpenFGAOperatorCharm(CharmBase):
         token = self._get_token(event)
         if not token:
             logger.error("token not found")
+            event.defer()
+            return
+
+        if not self.is_openfga_server_running():
             event.defer()
             return
 
