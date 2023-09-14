@@ -505,7 +505,6 @@ class OpenFGAOperatorCharm(CharmBase):
     def _list_stores(self, openfga_host: str, headers, continuation_token="") -> list:
         # to list stores we need to issue a GET request to the /stores
         # endpoint
-        # check this
         response: Response = requests.get(
             "{}/stores".format(openfga_host),
             headers=headers,
