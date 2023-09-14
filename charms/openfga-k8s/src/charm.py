@@ -431,6 +431,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         if not self.is_openfga_server_running():
             event.defer()
+            return
 
         store_id = self._create_openfga_store(token, store_name)
         if not store_id:
