@@ -398,6 +398,16 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
             return False
 
+    def is_openfga_server_running(self) -> bool:
+        container = self.unit.get_container(WORKLOAD_CONTAINER)
+        if not container.can_connect():
+            logger.error(f"Cannot connect to container {WORKLOAD_CONTAINER}")
+            return False
+        if not container.get_service(SERVICE_NAME).is_running():
+            logger.error(f"{SERVICE_NAME} is not running")
+            return False
+        return True
+
     @requires_state_setter
     def _on_openfga_relation_changed(self, event: RelationChangedEvent):
         """Open FGA relation changed."""
@@ -418,6 +428,9 @@ class OpenFGAOperatorCharm(CharmBase):
             logger.error("token not found")
             event.defer()
             return
+
+        if not self.is_openfga_server_running():
+            event.defer()
 
         store_id = self._create_openfga_store(token, store_name)
         if not store_id:
@@ -492,6 +505,7 @@ class OpenFGAOperatorCharm(CharmBase):
     def _list_stores(self, openfga_host: str, headers, continuation_token="") -> list:
         # to list stores we need to issue a GET request to the /stores
         # endpoint
+        # check this
         response: Response = requests.get(
             "{}/stores".format(openfga_host),
             headers=headers,
