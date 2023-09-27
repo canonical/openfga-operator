@@ -406,6 +406,7 @@ class OpenFGAOperatorCharm(CharmBase):
         try:
             svc = container.get_service(SERVICE_NAME)
         except ModelError:
+            logger.error(f"{SERVICE_NAME} is not running")
             return False
         if not svc.is_running():
             logger.error(f"{SERVICE_NAME} is not running")
