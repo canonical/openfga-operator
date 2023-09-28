@@ -403,7 +403,12 @@ class OpenFGAOperatorCharm(CharmBase):
         if not container.can_connect():
             logger.error(f"Cannot connect to container {WORKLOAD_CONTAINER}")
             return False
-        if not container.get_service(SERVICE_NAME).is_running():
+        try:
+            svc = container.get_service(SERVICE_NAME)
+        except ModelError:
+            logger.error(f"{SERVICE_NAME} is not running")
+            return False
+        if not svc.is_running():
             logger.error(f"{SERVICE_NAME} is not running")
             return False
         return True
