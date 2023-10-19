@@ -25,14 +25,6 @@ from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from charms.tls_certificates_interface.v1.tls_certificates import (
-    CertificateAvailableEvent,
-    CertificateExpiringEvent,
-    CertificateRevokedEvent,
-    TLSCertificatesRequiresV1,
-    generate_csr,
-    generate_private_key,
-)
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
@@ -114,25 +106,6 @@ class OpenFGAOperatorCharm(CharmBase):
         # OpenFGA relation
         self.framework.observe(self.on.openfga_relation_changed, self._on_openfga_relation_changed)
 
-        # Certificates relation
-        self.certificates = TLSCertificatesRequiresV1(self, "certificates")
-        self.framework.observe(
-            self.on.certificates_relation_joined,
-            self._on_certificates_relation_joined,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_available,
-            self._on_certificate_available,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_expiring,
-            self._on_certificate_expiring,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_revoked,
-            self._on_certificate_revoked,
-        )
-
         # Ingress relation
         self.ingress = IngressPerAppRequirer(self, relation_name="ingress", port=8080)
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
@@ -212,12 +185,6 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state_setter
     def _on_leader_elected(self, event):
         """Leader elected."""
-        # generate the private key if one is not present in the
-        # application data bucket of the peer relation
-        if not self._state.private_key:
-            private_key: bytes = generate_private_key(key_size=4096)
-            self._state.private_key = private_key.decode()
-
         self._update_workload(event)
 
     # flake8: noqa: C901
@@ -280,16 +247,6 @@ class OpenFGAOperatorCharm(CharmBase):
         if token:
             env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
-
-        if self._state.certificate and self._state.private_key:
-            container.push("/app/certificate.pem", self._state.certificate, make_dirs=True)
-            container.push("/app/key.pem", self._state.private_key, make_dirs=True)
-            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
-            env_vars["OPENFGA_HTTP_TLS_CERT"] = "/app/certificate.pem"
-            env_vars["OPENFGA_HTTP_TLS_KEY"] = "/app/key.pem"
-            env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
-            env_vars["OPENFGA_GRPC_TLS_CERT"] = "/app/certificate.pem"
-            env_vars["OPENFGA_GRPC_TLS_KEY"] = "/app/key.pem"
 
         env_vars = {key: value for key, value in env_vars.items() if value}
         for setting in REQUIRED_SETTINGS:
@@ -583,86 +540,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
         logger.info("schema upgraded")
         self._update_workload(event)
-
-    @requires_state_setter
-    def _on_certificates_relation_joined(self, event: RelationJoinedEvent) -> None:
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        private_key = self._state.private_key
-        csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=dnsname,
-        )
-        self._state.csr = csr.decode()
-
-        self.certificates.request_certificate_creation(certificate_signing_request=csr)
-
-    @requires_state_setter
-    def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:
-        self._state.certificate = event.certificate
-        self._state.ca = event.ca
-        self._state.key_chain = event.chain
-
-        self._update_workload(event)
-
-    @requires_state_setter
-    def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
-        old_csr = self._state.csr
-        private_key = self._state.private_key
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"),
-            self.app.name,
-            self.model.name,
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        new_csr = generate_csr(private_key=private_key.encode(), subject=dnsname)
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-
-        self._state.csr = new_csr.decode()
-
-        self._update_workload()
-
-    @requires_state_setter
-    def _on_certificate_revoked(self, event: CertificateRevokedEvent) -> None:
-        old_csr = self._state.csr
-        private_key = self._state.private_key
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"),
-            self.app.name,
-            self.model.name,
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        new_csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=dnsname,
-        )
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-
-        self._state.csr = new_csr.decode()
-        del self._state.certificate
-        del self._state.ca
-        del self._state.key_chain
-
-        self.unit.status = WaitingStatus("Waiting for new certificate")
-
-        self._update_workload()
 
     @requires_state_setter
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):

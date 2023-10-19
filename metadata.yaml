@@ -36,9 +36,6 @@ requires:
   database:
     interface: postgresql_client
     limit: 1
-  certificates:
-    interface: tls-certificates
-    limit: 1
   log-proxy:
     interface: loki_push_api
     optional: true
