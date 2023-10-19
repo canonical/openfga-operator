@@ -25,7 +25,7 @@ class TestCharm(unittest.TestCase):
         self.harness = Harness(OpenFGAOperatorCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.disable_hooks()
-        self.harness.add_oci_resource("openfga-image")
+        self.harness.add_oci_resource("oci-image")
         self.harness.begin()
 
         self.tempdir = tempfile.TemporaryDirectory()

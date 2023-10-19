@@ -25,7 +25,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
 
     Assert on the unit status before any relations/configurations take place.
     """
-    resources = {"openfga-image": METADATA["resources"]["openfga-image"]["upstream-source"]}
+    resources = {"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]}
     # Deploy the charm and wait for active/idle status
     logger.debug("deploying charms")
     await asyncio.gather(
