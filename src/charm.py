@@ -155,6 +155,15 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
+    @property
+    def _domain_name(self):
+        dns_name = self.ingress.url
+        if not dns_name:
+            dns_name = "{}.{}-endpoints.{}.svc.cluster.local".format(
+                self.unit.name.replace("/", "-"), self.app.name, self.model.name
+            )
+        return dns_name
+
     @requires_state_setter
     def _create_token(self, event):
         token = secrets.token_urlsafe(32)
@@ -197,13 +206,6 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token(event)
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
         # check if the database connection string has been
         # recorded in the peer relation's application data bucket
         if not self._state.db_uri:
@@ -227,8 +229,8 @@ class OpenFGAOperatorCharm(CharmBase):
                 if old_address != new_address:
                     openfga_relation.data[self.app].update({"address": new_address})
                 old_dns = openfga_relation.data[self.app].get("dns-name")
-                if old_dns != dnsname:
-                    openfga_relation.data[self.app].update({"dns-name": dnsname})
+                if old_dns != self._domain_name:
+                    openfga_relation.data[self.app].update({"dns-name": self._domain_name})
 
         env_vars = map_config_to_env_vars(self)
         env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
@@ -371,12 +373,6 @@ class OpenFGAOperatorCharm(CharmBase):
         if not store_name:
             return
 
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
         token = self._get_token(event)
         if not token:
             logger.error("token not found")
@@ -399,7 +395,7 @@ class OpenFGAOperatorCharm(CharmBase):
             "address": self._get_address(event.relation),
             "scheme": "http",
             "port": "8080",
-            "dns_name": dnsname,
+            "dns_name": self._domain_name,
         }
 
         if JujuVersion.from_environ().has_secrets:
@@ -533,16 +529,10 @@ class OpenFGAOperatorCharm(CharmBase):
         logger.info("schema upgraded")
         self._update_workload(event)
 
-    @requires_state_setter
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
-        self._state.dns_name = event.url
-
         self._update_workload(event)
 
-    @requires_state_setter
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
-        del self._state.dns_name
-
         self._update_workload(event)
 
     def _push_to_workload(self, filename, content, event):
