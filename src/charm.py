@@ -50,12 +50,10 @@ REQUIRED_SETTINGS = [
 ]
 
 LOG_FILE = "/var/log/openfga-k8s"
-LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 
 OPENFGA_SERVER_PORT = 8080
 
 LOG_FILE = "/var/log/openfga-k8s"
-LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
 
 OPENFGA_SERVER_PORT = 8080
 
@@ -191,9 +189,6 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state
     def _update_workload(self, event):
         """' Update workload with all available configuration data."""
-        # Quickly update logrotates config each workload update
-        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
-
         container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
         if not container.can_connect():
@@ -202,9 +197,6 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token(event)
-
-        # Quickly update logrotates config each workload update
-        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
 
         dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
             self.unit.name.replace("/", "-"), self.app.name, self.model.name
@@ -552,18 +544,6 @@ class OpenFGAOperatorCharm(CharmBase):
         del self._state.dns_name
 
         self._update_workload(event)
-
-    def _get_logrotate_config(self):
-        return f"""{LOG_FILE} {"{"}
-            rotate 3
-            daily
-            compress
-            delaycompress
-            missingok
-            notifempty
-            size 10M
-{"}"}
-"""
 
     def _push_to_workload(self, filename, content, event):
         """Pushes file to the workload container.

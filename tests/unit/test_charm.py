@@ -34,26 +34,6 @@ class TestCharm(unittest.TestCase):
 
         self.harness.container_pebble_ready("openfga")
 
-    def test_logrotate_config_pushed(self):
-        self.harness.set_leader(True)
-
-        rel_id = self.harness.add_relation("peer", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-        self.harness.charm._state.token = "test-token"
-        self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test-db-uri"
-        self.harness.charm._state.private_key = "test-key"
-        self.harness.charm._state.certificate = "test-cert"
-        self.harness.charm._state.ca = "test-ca"
-        self.harness.charm._state.key_chain = "test-chain"
-        self.harness.charm._state.dns_name = "test-dns-name"
-
-        container = self.harness.model.unit.get_container("openfga")
-        self.harness.charm.on.openfga_pebble_ready.emit(container)
-        root = self.harness.get_filesystem_root("openfga")
-        config = (root / "etc/logrotate.d/openfga").read_text()
-        self.assertIn("/var/log/openfga-k8s {", config)
-
     @patch("secrets.token_urlsafe")
     def test_on_config_changed(self, token_urlsafe):
         token_urlsafe.return_value = "a_test_secret"
