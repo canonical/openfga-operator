@@ -95,7 +95,7 @@ async def test_upgrade_running_application(ops_test: OpsTest, charm, test_charm)
     logger.debug("building local charm")
 
     charm = await ops_test.build_charm(".")
-    resources = {"openfga-image": "localhost:32000/openfga:latest"}
+    resources = {"openfga-image": METADATA["resources"]["openfga-image"]["upstream-source"]}
 
     # Deploy the charm and wait for active/idle status
     logger.debug("refreshing running application with the new local charm")
