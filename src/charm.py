@@ -433,7 +433,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # to create a new store we issue a POST request to /stores
         # endpoint
-        headers["Content-Type"] = "application/json"
         response = requests.post(
             "{}/stores".format(address),
             json={"name": store_name},
