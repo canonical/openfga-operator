@@ -36,7 +36,7 @@ jobs:
 
       - name: Run integration tests
         # set a predictable model name so it can be consumed by charm-logdump-action
-        run: tox -e integration -- --model testing
+        run: tox -e integration
 
       - name: Get contexts
         run: kubectl config view
@@ -46,16 +46,25 @@ jobs:
         run: juju status --relations
         if: failure()
 
-      - name: Get juju logs
-        run: juju debug-log --replay --include unit-openfga-k8s-0
+      - name: Dump debug log
         if: failure()
-
-      - name: Get openfga container logs
-        run: kubectl logs openfga-k8s-0 -c openfga-k8s -n testing
-        if: failure()
-
-      # Hack to overcome lack of tools (cat, tar) in the workload container
-      - name: Get openfga config file
         run: |
-          juju ssh --container openfga openfga/0 pebble plan
+          for m in $(juju models --format json | jq -r '.models[].name' | grep -v "admin/controller"); do juju debug-log -m $m --replay --ms --no-tail; done
+          exit 0
+
+      - name: Dump pods and their logs
         if: failure()
+        run: |
+          juju status --relations --storage
+          kubectl get pods \
+              -A \
+              -o=jsonpath='{range.items[*]}{.metadata.namespace} {.metadata.name}{"\n"}' \
+              --sort-by=.metadata.namespace \
+              | grep -v "^\s*$" \
+              | while read namespace pod; do \
+                   kubectl -n $namespace describe pod $pod; \
+                   kubectl -n $namespace logs $pod \
+                      --all-containers=true \
+                      --tail=100; \
+               done
+          exit 0
