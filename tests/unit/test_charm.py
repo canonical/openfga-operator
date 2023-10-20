@@ -8,7 +8,7 @@ import os
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from ops.testing import Harness
 
@@ -17,6 +17,26 @@ from charm import OpenFGAOperatorCharm
 logger = logging.getLogger(__name__)
 
 LOG_FILE = "/var/log/openfga-k8s"
+DB_USERNAME = "test-username"
+DB_PASSWORD = "test-password"
+DB_ENDPOINT = "postgresql-k8s-primary.namespace.svc.cluster.local:5432"
+
+
+def setup_postgres_relation(harness: Harness) -> int:
+    db_relation_id = harness.add_relation("database", "postgresql-k8s")
+    harness.add_relation_unit(db_relation_id, "postgresql-k8s/0")
+    harness.update_relation_data(
+        db_relation_id,
+        "postgresql-k8s",
+        {
+            "data": '{"database": "hydra", "extra-user-roles": "SUPERUSER"}',
+            "endpoints": DB_ENDPOINT,
+            "password": DB_PASSWORD,
+            "username": DB_USERNAME,
+        },
+    )
+
+    return db_relation_id
 
 
 class TestCharm(unittest.TestCase):
@@ -34,18 +54,24 @@ class TestCharm(unittest.TestCase):
 
         self.harness.container_pebble_ready("openfga")
 
+    @patch("charm.OpenFGAOperatorCharm._migration_is_needed", return_value=False)
+    @patch(
+        "charm.OpenFGAOperatorCharm._dsn",
+        new_callable=PropertyMock,
+        return_value="postgres://u:p@e/db",
+    )
     @patch("secrets.token_urlsafe")
-    def test_on_config_changed(self, token_urlsafe):
+    def test_on_config_changed(self, token_urlsafe, dsn, migration_is_needed):
         token_urlsafe.return_value = "a_test_secret"
 
         self.harness.set_leader(True)
 
         rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        setup_postgres_relation(self.harness)
 
         self.harness.charm._state.token = "test-token"
         self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test-db-uri"
         self.harness.charm._state.private_key = "test-key"
         self.harness.charm._state.certificate = "test-cert"
         self.harness.charm._state.ca = "test-ca"
@@ -78,13 +104,7 @@ class TestCharm(unittest.TestCase):
                         "OPENFGA_AUTHN_METHOD": "preshared",
                         "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
                         "OPENFGA_DATASTORE_ENGINE": "postgres",
-                        "OPENFGA_DATASTORE_URI": "test-db-uri",
-                        "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
-                        "OPENFGA_GRPC_TLS_ENABLED": "true",
-                        "OPENFGA_GRPC_TLS_KEY": "/app/key.pem",
-                        "OPENFGA_HTTP_TLS_CERT": "/app/certificate.pem",
-                        "OPENFGA_HTTP_TLS_ENABLED": "true",
-                        "OPENFGA_HTTP_TLS_KEY": "/app/key.pem",
+                        "OPENFGA_DATASTORE_URI": dsn.return_value,
                         "OPENFGA_LOG_LEVEL": "debug",
                         "OPENFGA_PLAYGROUND_ENABLED": "false",
                     },
@@ -94,10 +114,18 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
     @patch("charm.OpenFGAOperatorCharm._get_address")
+    @patch("charm.OpenFGAOperatorCharm._migration_is_needed", return_value=False)
+    @patch(
+        "charm.OpenFGAOperatorCharm._dsn",
+        new_callable=PropertyMock,
+        return_value="postgres://u:p@e/db",
+    )
     @patch("secrets.token_urlsafe")
     def test_on_openfga_relation_joined(
         self,
         token_urlsafe,
+        migration_is_needed,
+        dsn,
         get_address,
         create_openfga_store,
         *unused,
@@ -110,6 +138,7 @@ class TestCharm(unittest.TestCase):
 
         rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        setup_postgres_relation(self.harness)
 
         self.harness.charm._state.schema_created = "true"
         self.harness.charm._state.db_uri = "test_db_uri"
@@ -144,11 +173,19 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
     @patch("charm.OpenFGAOperatorCharm._get_address")
+    @patch("charm.OpenFGAOperatorCharm._migration_is_needed", return_value=False)
+    @patch(
+        "charm.OpenFGAOperatorCharm._dsn",
+        new_callable=PropertyMock,
+        return_value="postgres://u:p@e/db",
+    )
     @patch("secrets.token_urlsafe")
     @patch.dict(os.environ, {"JUJU_VERSION": "3.2.1"})
     def test_on_openfga_relation_joined_with_secrets(
         self,
         token_urlsafe,
+        migration_is_needed,
+        dsn,
         get_address,
         create_openfga_store,
         *unused,
@@ -161,6 +198,7 @@ class TestCharm(unittest.TestCase):
 
         rel_id = self.harness.add_relation("peer", "openfga")
         self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+        setup_postgres_relation(self.harness)
 
         self.harness.charm._state.schema_created = "true"
         self.harness.charm._state.db_uri = "test_db_uri"

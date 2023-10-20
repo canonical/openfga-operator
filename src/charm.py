@@ -18,9 +18,15 @@
 
 import logging
 import secrets
+from typing import Dict, Optional
+from urllib.parse import urlparse
 
 import requests
-from charms.data_platform_libs.v0.database_requires import DatabaseEvent, DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import (
+    DatabaseCreatedEvent,
+    DatabaseEndpointsChangedEvent,
+    DatabaseRequires,
+)
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
@@ -31,13 +37,14 @@ from charms.traefik_k8s.v1.ingress import (
     IngressPerAppRevokedEvent,
 )
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
+from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
-from ops.pebble import ExecError
+from ops.pebble import Error, ExecError
 from requests.models import Response
 
+from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
 logger = logging.getLogger(__name__)
@@ -50,6 +57,7 @@ REQUIRED_SETTINGS = [
 ]
 
 LOG_FILE = "/var/log/openfga-k8s"
+PEER_KEY_DB_MIGRATE_VERSION = "db_migrate_version"
 
 OPENFGA_SERVER_PORT = 8080
 
@@ -58,6 +66,7 @@ LOG_FILE = "/var/log/openfga-k8s"
 OPENFGA_SERVER_PORT = 8080
 
 SERVICE_NAME = "openfga"
+DATABASE_NAME = "openfga"
 
 
 class OpenFGAOperatorCharm(CharmBase):
@@ -67,6 +76,8 @@ class OpenFGAOperatorCharm(CharmBase):
         super().__init__(*args)
 
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
+        self._container = self.unit.get_container(WORKLOAD_CONTAINER)
+        self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_PORT}", self._container)
 
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -113,12 +124,12 @@ class OpenFGAOperatorCharm(CharmBase):
         self.database = DatabaseRequires(
             self,
             relation_name="database",
-            database_name="openfga",
+            database_name=DATABASE_NAME,
         )
-        self.framework.observe(self.database.on.database_created, self._on_database_event)
+        self.framework.observe(self.database.on.database_created, self._on_database_created)
         self.framework.observe(
             self.database.on.endpoints_changed,
-            self._on_database_event,
+            self._on_database_changed,
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
@@ -164,6 +175,39 @@ class OpenFGAOperatorCharm(CharmBase):
             )
         return dns_name
 
+    def _get_database_relation_info(self) -> Optional[Dict]:
+        """Get database info from relation data bag."""
+        if not self.database.relations:
+            return None
+
+        relation_id = self.database.relations[0].id
+        relation_data = self.database.fetch_relation_data()[relation_id]
+        return {
+            "username": relation_data.get("username"),
+            "password": relation_data.get("password"),
+            "endpoints": relation_data.get("endpoints"),
+            "database_name": DATABASE_NAME,
+        }
+
+    @property
+    def _dsn(self) -> Optional[str]:
+        db_info = self._get_database_relation_info()
+        if not db_info:
+            return None
+
+        return "postgres://{username}:{password}@{endpoints}/{database_name}".format(
+            username=db_info.get("username"),
+            password=db_info.get("password"),
+            endpoints=db_info.get("endpoints"),
+            database_name=db_info.get("database_name"),
+        )
+
+    @property
+    def _migration_peer_data_key(self) -> Optional[str]:
+        if not self.database.relations:
+            return None
+        return f"{PEER_KEY_DB_MIGRATE_VERSION}_{self.database.relations[0].id}"
+
     @requires_state_setter
     def _create_token(self, event):
         token = secrets.token_urlsafe(32)
@@ -206,15 +250,16 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token(event)
-        # check if the database connection string has been
-        # recorded in the peer relation's application data bucket
-        if not self._state.db_uri:
-            logger.info("waiting for postgresql relation")
-            self.unit.status = BlockedStatus("Waiting for postgresql relation")
+        if not self.model.relations["database"]:
+            self.unit.status = BlockedStatus("Missing required relation with postgresql")
+            return
+
+        if not self.database.is_resource_created():
+            self.unit.status = WaitingStatus("Waiting for database creation")
             return
 
         # check if the schema has been upgraded
-        if not self._state.schema_created:
+        if self._migration_is_needed():
             logger.info("waiting for schema upgrade")
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
@@ -235,7 +280,7 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars = map_config_to_env_vars(self)
         env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-        env_vars["OPENFGA_DATASTORE_URI"] = self._state.db_uri
+        env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
 
         token = self._get_token(event)
         if token:
@@ -288,43 +333,68 @@ class OpenFGAOperatorCharm(CharmBase):
         self._update_workload(event)
 
     @requires_state_setter
-    def _on_database_event(self, event: DatabaseEvent) -> None:
+    def _on_database_created(self, event: DatabaseCreatedEvent) -> None:
         """Database event handler."""
-        # get the first endpoint from a comma separate list
-        ep = event.endpoints.split(",", 1)[0]
-        # compose the db connection string
-        uri = f"postgresql://{event.username}:{event.password}@{ep}/openfga"
+        if not self._container.can_connect():
+            event.defer()
+            logger.info("Cannot connect to container. Deferring the event.")
+            self.unit.status = WaitingStatus("Waiting to connect to container")
+            return
 
-        # record the connection string
-        self._state.db_uri = uri
+        if not self._migration_is_needed():
+            self._update_workload(event)
+            return
 
+        if not self._run_sql_migration():
+            self.unit.status = BlockedStatus("Database migration job failed")
+            logger.error("Automigration job failed, please use the schema-upgrade action")
+            return
+
+        setattr(self._state, self._migration_peer_data_key, self.openfga.get_version())
         self._update_workload(event)
 
     @requires_state_setter
-    def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
-        """Database relation broken handler."""
-        # when the database relation is broken, we unset the
-        # connection string and schema-created from the application
-        # bucket of the peer relation
-        del self._state.db_uri
-        del self._state.schema_created
-
+    def _on_database_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
+        """Database event handler."""
         self._update_workload(event)
 
-    def _ready(self) -> bool:
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
+    @requires_state_setter
+    def _on_database_relation_broken(self, event: RelationDepartedEvent) -> None:
+        """Database relation broken handler."""
+        self._update_workload(event)
 
+    def _migration_is_needed(self) -> Optional[bool]:
+        if not self._state.is_ready():
+            return None
+
+        return (
+            getattr(self._state, self._migration_peer_data_key, None) != self.openfga.get_version()
+        )
+
+    def _run_sql_migration(self) -> bool:
+        """Runs database migration.
+
+        Returns True if migration was run successfully, else returns false.
+        """
+        try:
+            self.openfga.run_migration(self._dsn)
+            logger.info(f"Successfully executed the database migration")
+        except Error as err:
+            self.unit.status = BlockedStatus("Database migration job failed")
+            err_msg = err.stderr if isinstance(err, ExecError) else err
+            logger.error(f"Database migration failed: {err_msg}")
+            return False
+        return True
+
+    def _ready(self) -> bool:
         if not self._state.is_ready():
             return False
 
-        if not self._state.db_uri:
-            self.unit.status = BlockedStatus("Waiting for postgresql relation")
-            return False
-
-        if not self._state.schema_created:
+        if self._migration_is_needed():
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return False
 
+        container = self.unit.get_container(WORKLOAD_CONTAINER)
         if container.can_connect():
             plan = container.get_plan()
             if plan.services.get(SERVICE_NAME) is None:
@@ -487,45 +557,23 @@ class OpenFGAOperatorCharm(CharmBase):
     @requires_state_setter
     def _on_schema_upgrade_action(self, event):
         """Performs a schema upgrade on the configurable database."""
-        db_uri = self._state.db_uri
-        if not db_uri:
-            event.set_results({"error": "missing postgres relation"})
-            return
-
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if not container.can_connect():
+        if not self._container.can_connect():
             event.set_results({"error": "cannot connect to the workload container"})
             return
 
-        migration_process = container.exec(
-            command=[
-                "openfga",
-                "migrate",
-                "--datastore-engine",
-                "postgres",
-                "--datastore-uri",
-                "{}".format(db_uri),
-            ],
-            encoding="utf-8",
-        )
-
         try:
-            stdout = migration_process.wait_output()
-            self.unit.status = WaitingStatus("Schema migration done")
+            self.openfga.run_migration(dsn=self._dsn)
             event.set_results({"result": "done"})
         except ExecError as e:
-            if "already exists" in e.stderr:
-                logger.info("schema migration failed because the schema already exists")
-                self.unit.status = WaitingStatus("Schema migration done")
+            if isinstance(e, ExecError) and "already exists" in e.stderr:
                 event.set_results({"result": "done"})
             else:
-                logger.error(
-                    "failed to run schema migration: err {} db_uri {}".format(e.stderr, db_uri)
-                )
-                event.set_results({"std-err": e.stderr, "std-out": stdout, "db_uri": db_uri})
-        self._state.schema_created = "true"
+                self.unit.status = BlockedStatus("Database migration job failed")
+                err_msg = e.stderr if isinstance(e, ExecError) else e
+                logger.error(f"Database migration failed: {err_msg}")
 
         logger.info("schema upgraded")
+        setattr(self._state, self._migration_peer_data_key, self.openfga.get_version())
         self._update_workload(event)
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):

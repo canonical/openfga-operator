@@ -55,23 +55,11 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
 
     logger.debug("adding postgresql relation")
     await ops_test.model.integrate(APP_NAME, "postgresql:database")
-
-    logger.debug("running schema-upgrade action")
-    openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
-    for i in range(10):
-        action: Action = await openfga_unit.run_action("schema-upgrade")
-        result = await action.wait()
-        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
-        if result.results == {"result": "done", "return-code": 0}:
-            break
-        time.sleep(2)
-
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            timeout=60,
-        )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        timeout=60,
+    )
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
