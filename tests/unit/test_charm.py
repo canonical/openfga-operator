@@ -99,7 +99,7 @@ class TestCharm(unittest.TestCase):
                     "override": "merge",
                     "startup": "disabled",
                     "summary": "OpenFGA",
-                    "command": "sh -c 'openfga run | tee {LOG_FILE}'",
+                    "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
                     "environment": {
                         "OPENFGA_AUTHN_METHOD": "preshared",
                         "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",

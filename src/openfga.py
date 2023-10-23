@@ -59,5 +59,5 @@ class OpenFGA:
 
         return (
             output.decode() if isinstance(output, bytes) else output,
-            stderr.decode() if isinstance(stderr, bytes) else stderr
+            stderr.decode() if isinstance(stderr, bytes) else stderr,
         )

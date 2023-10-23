@@ -4,13 +4,11 @@
 
 import asyncio
 import logging
-import time
 from pathlib import Path
 
 import pytest
 import utils
 import yaml
-from juju.action import Action
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

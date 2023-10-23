@@ -59,11 +59,8 @@ REQUIRED_SETTINGS = [
 LOG_FILE = "/var/log/openfga-k8s"
 PEER_KEY_DB_MIGRATE_VERSION = "db_migrate_version"
 
-OPENFGA_SERVER_PORT = 8080
-
-LOG_FILE = "/var/log/openfga-k8s"
-
-OPENFGA_SERVER_PORT = 8080
+OPENFGA_SERVER_HTTP_PORT = 8080
+OPENFGA_SERVER_GRPC_PORT = 8081
 
 SERVICE_NAME = "openfga"
 DATABASE_NAME = "openfga"
@@ -77,7 +74,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self._container = self.unit.get_container(WORKLOAD_CONTAINER)
-        self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_PORT}", self._container)
+        self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container)
 
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -95,7 +92,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self, relation_name="grafana-dashboard"
         )
 
-        # Loki log-proxy relation (TODO(ale8k): Test this works properly)
+        # Loki log-proxy relation
         self.log_proxy = LogProxyConsumer(
             self,
             log_files=[LOG_FILE],
@@ -107,7 +104,7 @@ class OpenFGAOperatorCharm(CharmBase):
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
+            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_HTTP_PORT}"]}]}],
             refresh_event=self.on.config_changed,
             relation_name="metrics-endpoint",
         )
@@ -116,7 +113,9 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(self.on.openfga_relation_changed, self._on_openfga_relation_changed)
 
         # Ingress relation
-        self.ingress = IngressPerAppRequirer(self, relation_name="ingress", port=8080)
+        self.ingress = IngressPerAppRequirer(
+            self, relation_name="ingress", port=OPENFGA_SERVER_HTTP_PORT
+        )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
@@ -133,8 +132,12 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
-        port_http = ServicePort(8080, name=f"{self.app.name}-http", protocol="TCP")
-        port_grpc = ServicePort(8081, name=f"{self.app.name}-grpc", protocol="TCP")
+        port_http = ServicePort(
+            OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
+        )
+        port_grpc = ServicePort(
+            OPENFGA_SERVER_GRPC_PORT, name=f"{self.app.name}-grpc", protocol="TCP"
+        )
         self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc])
 
     def _on_openfga_pebble_ready(self, event):
@@ -151,15 +154,14 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_stop(self, _):
         """Stop OpenFGA."""
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if container.can_connect():
+        if self._container.can_connect():
             try:
-                service = container.get_service(SERVICE_NAME)
+                service = self._container.get_service(SERVICE_NAME)
             except ModelError:
                 logger.warning("service not found, won't stop")
                 return
             if service.is_running():
-                container.stop(SERVICE_NAME)
+                self._container.stop(SERVICE_NAME)
         self.unit.status = WaitingStatus("service stopped")
 
     def _on_update_status(self, _):
@@ -168,8 +170,11 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @property
     def _domain_name(self):
-        dns_name = self.ingress.url
-        if not dns_name:
+        if url := self.ingress.url:
+            # Remove scheme part from url
+            url = urlparse(url)
+            dns_name = url.netloc + url.path
+        else:
             dns_name = "{}.{}-endpoints.{}.svc.cluster.local".format(
                 self.unit.name.replace("/", "-"), self.app.name, self.model.name
             )
@@ -208,6 +213,54 @@ class OpenFGAOperatorCharm(CharmBase):
             return None
         return f"{PEER_KEY_DB_MIGRATE_VERSION}_{self.database.relations[0].id}"
 
+    @property
+    def _pebble_layer(self):
+        env_vars = map_config_to_env_vars(self)
+        env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
+        env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
+        env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
+
+        token = self._get_token()
+        if token:
+            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
+            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
+
+        env_vars = {key: value for key, value in env_vars.items() if value}
+        for setting in REQUIRED_SETTINGS:
+            if not env_vars.get(setting, ""):
+                self.unit.status = BlockedStatus(
+                    "{} configuration value not set".format(setting),
+                )
+                return {}
+
+        return {
+            "summary": "openfga layer",
+            "description": "pebble layer for openfga",
+            "services": {
+                SERVICE_NAME: {
+                    "override": "merge",
+                    "summary": "OpenFGA",
+                    "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                    "startup": "disabled",
+                    "environment": env_vars,
+                }
+            },
+            "checks": {
+                "openfga-http-check": {
+                    "override": "replace",
+                    "period": "1m",
+                    "http": {"url": f"http://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"},
+                },
+                "openfga-grpc-check": {
+                    "override": "replace",
+                    "period": "1m",
+                    "exec": {
+                        "command": f"grpc_health_probe -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                    },
+                },
+            },
+        }
+
     @requires_state_setter
     def _create_token(self, event):
         token = secrets.token_urlsafe(32)
@@ -221,8 +274,7 @@ class OpenFGAOperatorCharm(CharmBase):
             if not self._state.token:
                 self._state.token = token
 
-    @requires_state
-    def _get_token(self, event):
+    def _get_token(self):
         if JujuVersion.from_environ().has_secrets:
             if self._state.token_secret_id:
                 secret = self.model.get_secret(id=self._state.token_secret_id)
@@ -238,13 +290,11 @@ class OpenFGAOperatorCharm(CharmBase):
         """Leader elected."""
         self._update_workload(event)
 
-    # flake8: noqa: C901
     @requires_state
     def _update_workload(self, event):
         """' Update workload with all available configuration data."""
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
-        if not container.can_connect():
+        if not self._container.can_connect():
             logger.info("cannot connect to the openfga container")
             event.defer()
             return
@@ -269,65 +319,21 @@ class OpenFGAOperatorCharm(CharmBase):
         if self.unit.is_leader():
             openfga_relation = self.model.get_relation("openfga")
             if openfga_relation and self.app in openfga_relation.data:
-                old_address = openfga_relation.data[self.app].get("address", "")
-                new_address = self._get_address(openfga_relation)
-                if old_address != new_address:
-                    openfga_relation.data[self.app].update({"address": new_address})
-                old_dns = openfga_relation.data[self.app].get("dns-name")
-                if old_dns != self._domain_name:
-                    openfga_relation.data[self.app].update({"dns-name": self._domain_name})
-
-        env_vars = map_config_to_env_vars(self)
-        env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
-        env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-        env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
-
-        token = self._get_token(event)
-        if token:
-            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
-            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
-
-        env_vars = {key: value for key, value in env_vars.items() if value}
-        for setting in REQUIRED_SETTINGS:
-            if not env_vars.get(setting, ""):
-                self.unit.status = BlockedStatus(
-                    "{} configuration value not set".format(setting),
+                openfga_relation.data[self.app].update(
+                    {
+                        "address": self._get_address(openfga_relation),
+                        "dns-name": self._domain_name,
+                    }
                 )
-                return
 
-        pebble_layer = {
-            "summary": "openfga layer",
-            "description": "pebble layer for openfga",
-            "services": {
-                SERVICE_NAME: {
-                    "override": "merge",
-                    "summary": "OpenFGA",
-                    "command": "sh -c 'openfga run | tee {LOG_FILE}'",
-                    "startup": "disabled",
-                    "environment": env_vars,
-                }
-            },
-            "checks": {
-                "openfga-check": {
-                    "override": "replace",
-                    "period": "1m",
-                    "http": {"url": "http://localhost:8080/healthz"},
-                }
-            },
-        }
-        container.add_layer("openfga", pebble_layer, combine=True)
-        if self._ready():
-            if container.get_service(SERVICE_NAME).is_running():
-                container.replan()
-            else:
-                container.start(SERVICE_NAME)
-            self.unit.status = ActiveStatus()
-            if self.unit.is_leader():
-                self.app.status = ActiveStatus()
-        else:
+        self._container.add_layer("openfga", self._pebble_layer, combine=True)
+        if not self._ready():
             logger.info("workload container not ready - deferring")
             event.defer()
             return
+
+        self._container.restart(SERVICE_NAME)
+        self.unit.status = ActiveStatus()
 
     def _on_peer_relation_changed(self, event):
         self._update_workload(event)
@@ -378,10 +384,9 @@ class OpenFGAOperatorCharm(CharmBase):
         """
         try:
             self.openfga.run_migration(self._dsn)
-            logger.info(f"Successfully executed the database migration")
-        except Error as err:
-            self.unit.status = BlockedStatus("Database migration job failed")
-            err_msg = err.stderr if isinstance(err, ExecError) else err
+            logger.info("Successfully executed the database migration")
+        except Error as e:
+            err_msg = e.stderr if isinstance(e, ExecError) else e
             logger.error(f"Database migration failed: {err_msg}")
             return False
         return True
@@ -394,38 +399,35 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return False
 
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if container.can_connect():
-            plan = container.get_plan()
-            if plan.services.get(SERVICE_NAME) is None:
-                self.unit.status = WaitingStatus("waiting for service")
-                return False
-
-            env_vars = plan.services.get(SERVICE_NAME).environment
-
-            for setting in REQUIRED_SETTINGS:
-                if not env_vars.get(setting, ""):
-                    self.unit.status = BlockedStatus(
-                        "{} configuration value not set".format(setting),
-                    )
-                    return False
-
-            if container.get_service(SERVICE_NAME).is_running():
-                self.unit.status = ActiveStatus()
-
-            return True
-        else:
+        if not self._container.can_connect():
             logger.debug("cannot connect to workload container")
             self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
             return False
 
-    def is_openfga_server_running(self) -> bool:
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if not container.can_connect():
+        plan = self._container.get_plan()
+        if not plan.services.get(SERVICE_NAME):
+            self.unit.status = WaitingStatus("waiting for service")
+            return False
+
+        env_vars = plan.services.get(SERVICE_NAME).environment
+        for setting in REQUIRED_SETTINGS:
+            if not env_vars.get(setting, ""):
+                self.unit.status = BlockedStatus(
+                    "{} configuration value not set".format(setting),
+                )
+                return False
+
+        if self._container.get_service(SERVICE_NAME).is_running():
+            self.unit.status = ActiveStatus()
+
+        return True
+
+    def _is_openfga_server_running(self) -> bool:
+        if not self._container.can_connect():
             logger.error(f"Cannot connect to container {WORKLOAD_CONTAINER}")
             return False
         try:
-            svc = container.get_service(SERVICE_NAME)
+            svc = self._container.get_service(SERVICE_NAME)
         except ModelError:
             logger.error(f"{SERVICE_NAME} is not running")
             return False
@@ -443,13 +445,13 @@ class OpenFGAOperatorCharm(CharmBase):
         if not store_name:
             return
 
-        token = self._get_token(event)
+        token = self._get_token()
         if not token:
             logger.error("token not found")
             event.defer()
             return
 
-        if not self.is_openfga_server_running():
+        if not self._is_openfga_server_running():
             event.defer()
             return
 
@@ -464,7 +466,7 @@ class OpenFGAOperatorCharm(CharmBase):
             "store_id": store_id,
             "address": self._get_address(event.relation),
             "scheme": "http",
-            "port": "8080",
+            "port": str(OPENFGA_SERVER_HTTP_PORT),
             "dns_name": self._domain_name,
         }
 
@@ -485,7 +487,7 @@ class OpenFGAOperatorCharm(CharmBase):
     def _create_openfga_store(self, token: str, store_name: str):
         logger.info("creating store: {}".format(store_name))
 
-        address = "http://localhost:8080"
+        address = f"http://localhost:{OPENFGA_SERVER_HTTP_PORT}"
         headers = {"Authorization": "Bearer {}".format(token)}
 
         # we need to check if the store with the specified name already
@@ -507,7 +509,6 @@ class OpenFGAOperatorCharm(CharmBase):
             "{}/stores".format(address),
             json={"name": store_name},
             headers=headers,
-            verify=False,
         )
         if response.status_code == 200 or response.status_code == 201:
             # if we successfully created the store, we return its id.
@@ -528,7 +529,6 @@ class OpenFGAOperatorCharm(CharmBase):
         response: Response = requests.get(
             "{}/stores".format(openfga_host),
             headers=headers,
-            verify=False,
         )
         if response.status_code != 200:
             logger.error("to list existing openfga store: {}".format(response.json()))
@@ -561,16 +561,12 @@ class OpenFGAOperatorCharm(CharmBase):
             event.set_results({"error": "cannot connect to the workload container"})
             return
 
-        try:
-            self.openfga.run_migration(dsn=self._dsn)
+        if self._run_sql_migration():
             event.set_results({"result": "done"})
-        except ExecError as e:
-            if isinstance(e, ExecError) and "already exists" in e.stderr:
-                event.set_results({"result": "done"})
-            else:
-                self.unit.status = BlockedStatus("Database migration job failed")
-                err_msg = e.stderr if isinstance(e, ExecError) else e
-                logger.error(f"Database migration failed: {err_msg}")
+        else:
+            event.set_results({"result": "failed to migrate database"})
+            self.unit.status = BlockedStatus("Database migration job failed")
+            return
 
         logger.info("schema upgraded")
         setattr(self._state, self._migration_peer_data_key, self.openfga.get_version())
@@ -581,20 +577,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
         self._update_workload(event)
-
-    def _push_to_workload(self, filename, content, event):
-        """Pushes file to the workload container.
-
-        Create file on the workload container with
-        the specified content.
-        """
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if container.can_connect():
-            logger.info("pushing file {} to the workload container".format(filename))
-            container.push(filename, content, make_dirs=True)
-        else:
-            logger.info("workload container not ready - deferring")
-            event.defer()
 
 
 def map_config_to_env_vars(charm, **additional_env):
