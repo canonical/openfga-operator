@@ -44,7 +44,7 @@ copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"
 pretty = true
 mypy_path = "./src:./lib/:./tests"
 # Exclude non-hydra libraries
-exclude = 'lib/charms/((?!hydra).)'
+exclude = 'lib/charms/((?!openfga_k8s).)'
 follow_imports = "silent"
 warn_redundant_casts = true
 warn_unused_configs = true
