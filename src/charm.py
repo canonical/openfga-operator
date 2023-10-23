@@ -44,26 +44,25 @@ from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, Waiting
 from ops.pebble import Error, ExecError
 from requests.models import Response
 
+from constants import (
+    DATABASE_NAME,
+    DATABASE_RELATION_NAME,
+    GRAFANA_RELATION_NAME,
+    INGRESS_RELATION_NAME,
+    LOG_FILE,
+    LOG_PROXY_RELATION_NAME,
+    METRIC_RELATION_NAME,
+    OPENFGA_SERVER_GRPC_PORT,
+    OPENFGA_SERVER_HTTP_PORT,
+    PEER_KEY_DB_MIGRATE_VERSION,
+    REQUIRED_SETTINGS,
+    SERVICE_NAME,
+    WORKLOAD_CONTAINER,
+)
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
 logger = logging.getLogger(__name__)
-
-WORKLOAD_CONTAINER = "openfga"
-
-REQUIRED_SETTINGS = [
-    "OPENFGA_DATASTORE_URI",
-    "OPENFGA_AUTHN_PRESHARED_KEYS",
-]
-
-LOG_FILE = "/var/log/openfga-k8s"
-PEER_KEY_DB_MIGRATE_VERSION = "db_migrate_version"
-
-OPENFGA_SERVER_HTTP_PORT = 8080
-OPENFGA_SERVER_GRPC_PORT = 8081
-
-SERVICE_NAME = "openfga"
-DATABASE_NAME = "openfga"
 
 
 class OpenFGAOperatorCharm(CharmBase):
@@ -89,14 +88,14 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Grafana dashboard relation
         self._grafana_dashboards = GrafanaDashboardProvider(
-            self, relation_name="grafana-dashboard"
+            self, relation_name=GRAFANA_RELATION_NAME
         )
 
         # Loki log-proxy relation
         self.log_proxy = LogProxyConsumer(
             self,
             log_files=[LOG_FILE],
-            relation_name="log-proxy",
+            relation_name=LOG_PROXY_RELATION_NAME,
             promtail_resource_name="promtail-bin",
             container_name=WORKLOAD_CONTAINER,
         )
@@ -106,7 +105,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self,
             jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_HTTP_PORT}"]}]}],
             refresh_event=self.on.config_changed,
-            relation_name="metrics-endpoint",
+            relation_name=METRIC_RELATION_NAME,
         )
 
         # OpenFGA relation
@@ -114,7 +113,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Ingress relation
         self.ingress = IngressPerAppRequirer(
-            self, relation_name="ingress", port=OPENFGA_SERVER_HTTP_PORT
+            self, relation_name=INGRESS_RELATION_NAME, port=OPENFGA_SERVER_HTTP_PORT
         )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
@@ -122,7 +121,7 @@ class OpenFGAOperatorCharm(CharmBase):
         # Database relation
         self.database = DatabaseRequires(
             self,
-            relation_name="database",
+            relation_name=DATABASE_RELATION_NAME,
             database_name=DATABASE_NAME,
         )
         self.framework.observe(self.database.on.database_created, self._on_database_created)
@@ -300,7 +299,7 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token(event)
-        if not self.model.relations["database"]:
+        if not self.model.relations[DATABASE_RELATION_NAME]:
             self.unit.status = BlockedStatus("Missing required relation with postgresql")
             return
 
