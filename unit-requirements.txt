@@ -1,4 +1,5 @@
 pytest
+pytest-mock
 coverage[toml]
 charmhelpers
 -r requirements.txt
