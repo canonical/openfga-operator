@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 import utils
 import yaml
-from juju.action import Action
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -44,38 +43,38 @@ async def test_upgrade_running_application(ops_test: OpsTest, charm, test_charm)
         ),
     )
 
-    logger.debug("waiting for postgresql")
+    logger.debug("adding postgresql relation")
     await ops_test.model.wait_for_idle(
         apps=["postgresql"],
         status="active",
-        raise_on_blocked=True,
         timeout=1000,
     )
+    openfga_unit = ops_test.model.applications[APP_NAME].units[0]
+    await ops_test.model.block_until(
+        lambda: (
+            openfga_unit.workload_status in ["blocked"]
+            and openfga_unit.workload_status_message == "Waiting for postgresql relation"
+        ),
+        timeout=60,
+    )
 
-    logger.debug("adding postgresql relation")
-    await ops_test.model.integrate(APP_NAME, "postgresql:database")
-
-    logger.debug("running schema-upgrade action")
-    openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
+    await ops_test.model.integrate(APP_NAME, "postgresql")
+    await ops_test.model.block_until(
+        lambda: (
+            openfga_unit.workload_status in ["blocked"]
+            and openfga_unit.workload_status_message == "Please run schema-upgrade action"
+        ),
+        timeout=60,
+    )
     for i in range(10):
-        action: Action = await openfga_unit.run_action("schema-upgrade")
+        action = await openfga_unit.run_action("schema-upgrade")
         result = await action.wait()
         logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
         if result.results == {"result": "done", "return-code": 0}:
             break
         time.sleep(2)
 
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            timeout=60,
-        )
-
-    assert ops_test.model.applications[APP_NAME].status == "active"
-
     await ops_test.model.integrate(APP_NAME, "openfga-requires")
-
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
             apps=["openfga-requires"],
@@ -83,9 +82,7 @@ async def test_upgrade_running_application(ops_test: OpsTest, charm, test_charm)
             timeout=60,
         )
 
-    openfga_requires_unit = await utils.get_unit_by_name(
-        "openfga-requires", "0", ops_test.model.units
-    )
+    openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
 
     # Starting upgrade/refresh
@@ -94,27 +91,40 @@ async def test_upgrade_running_application(ops_test: OpsTest, charm, test_charm)
     # Build and deploy charm from local source folder
     logger.debug("building local charm")
 
-    charm = await ops_test.build_charm(".")
-    resources = {"openfga-image": METADATA["resources"]["openfga-image"]["upstream-source"]}
+    resources = {"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]}
 
-    # Deploy the charm and wait for active/idle status
+    # Deploy the charm and wait for active/blocked status
     logger.debug("refreshing running application with the new local charm")
 
     await ops_test.model.applications[APP_NAME].refresh(
         path=charm,
         resources=resources,
     )
+    await ops_test.model.block_until(
+        lambda: ops_test.model.applications[APP_NAME].units[0].workload_status
+        in ["blocked", "active"],
+        timeout=60,
+    )
 
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            timeout=60,
-        )
+    logger.debug("running schema-upgrade action")
+    openfga_unit = ops_test.model.applications[APP_NAME].units[0]
+    for i in range(10):
+        action = await openfga_unit.run_action("schema-upgrade")
+        result = await action.wait()
+        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
+        if result.results == {"result": "done", "return-code": 0}:
+            break
+        time.sleep(2)
+
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        timeout=60,
+    )
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
-    upgraded_openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
+    upgraded_openfga_unit = ops_test.model.applications[APP_NAME].units[0]
 
     health = await upgraded_openfga_unit.run("curl -s http://localhost:8080/healthz")
     await health.wait()

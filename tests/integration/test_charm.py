@@ -43,26 +43,17 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
         ),
     )
 
-    logger.debug("waiting for postgresql")
-    await ops_test.model.wait_for_idle(
-        apps=["postgresql"],
-        status="active",
-        raise_on_blocked=True,
-        timeout=1000,
-    )
-
     logger.debug("adding postgresql relation")
     await ops_test.model.integrate(APP_NAME, "postgresql:database")
     await ops_test.model.wait_for_idle(
-        apps=[APP_NAME],
+        apps=[APP_NAME, "postgresql"],
         status="active",
-        timeout=60,
+        timeout=1000,
     )
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
     await ops_test.model.integrate(APP_NAME, "openfga-requires")
-
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
             apps=["openfga-requires"],
@@ -70,7 +61,5 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
             timeout=60,
         )
 
-    openfga_requires_unit = await utils.get_unit_by_name(
-        "openfga-requires", "0", ops_test.model.units
-    )
+    openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
