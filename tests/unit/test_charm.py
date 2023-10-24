@@ -4,6 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import logging
+from unittest.mock import MagicMock
 
 from ops.testing import Harness
 
@@ -37,7 +38,12 @@ def setup_peer_relation(harness: Harness) -> None:
     harness.add_relation_unit(rel_id, "openfga-k8s/1")
 
 
-def test_on_config_changed(harness, mocked_token_urlsafe, mocked_dsn, mocked_migration_is_needed):
+def test_on_config_changed(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+) -> None:
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)
@@ -71,13 +77,13 @@ def test_on_config_changed(harness, mocked_token_urlsafe, mocked_dsn, mocked_mig
 
 
 def test_on_openfga_relation_joined(
-    harness,
-    mocked_token_urlsafe,
-    mocked_migration_is_needed,
-    mocked_dsn,
-    mocked_get_address,
-    mocked_create_openfga_store,
-):
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_get_address: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+) -> None:
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)
@@ -108,13 +114,13 @@ def test_on_openfga_relation_joined(
 
 def test_on_openfga_relation_joined_with_secrets(
     harness: Harness,
-    mocked_token_urlsafe,
-    mocked_migration_is_needed,
-    mocked_dsn,
-    mocked_get_address,
-    mocked_create_openfga_store,
-    mocked_juju_version,
-):
+    mocked_token_urlsafe: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_get_address: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+    mocked_juju_version: MagicMock,
+) -> None:
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)

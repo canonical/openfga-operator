@@ -4,6 +4,7 @@
 import os
 import pathlib
 import tempfile
+from typing import Generator
 from unittest.mock import MagicMock, PropertyMock
 
 import pytest
@@ -14,7 +15,7 @@ from charm import OpenFGAOperatorCharm
 
 
 @pytest.fixture()
-def harness(mocked_kubernetes_service_patcher: MagicMock) -> Harness:
+def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, None, None]:
     harness = Harness(OpenFGAOperatorCharm)
     harness.set_model_name("openfga-model")
     harness.add_oci_resource("oci-image")

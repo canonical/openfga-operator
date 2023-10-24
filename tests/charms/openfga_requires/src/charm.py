@@ -13,8 +13,10 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import logging
+from typing import Any
 
 from charms.openfga_k8s.v0.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
+from ops import UpdateStatusEvent
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, WaitingStatus
@@ -30,7 +32,7 @@ VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 class OpenfgaRequiresCharm(CharmBase):
     """Charm the service."""
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any) -> None:
         super().__init__(*args)
 
         self._state = State(self.app, lambda: self.model.get_relation("openfga-test-peer"))
@@ -45,7 +47,7 @@ class OpenfgaRequiresCharm(CharmBase):
             self._on_openfga_store_created,
         )
 
-    def _on_update_status(self, event):
+    def _on_update_status(self, event: UpdateStatusEvent) -> None:
         if not self._state.is_ready():
             event.defer()
             return
@@ -59,7 +61,7 @@ class OpenfgaRequiresCharm(CharmBase):
         else:
             self.unit.status = WaitingStatus("waiting for store information")
 
-    def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent):
+    def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent) -> None:
         if not self.unit.is_leader():
             return
 

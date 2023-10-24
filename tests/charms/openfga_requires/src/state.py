@@ -4,6 +4,9 @@
 """Manager for handling charm state."""
 
 import json
+from typing import Any, Callable
+
+from ops import Application
 
 
 class State:
@@ -13,7 +16,7 @@ class State:
     As relation data values must be strings, all values are JSON encoded.
     """
 
-    def __init__(self, app, get_relation):
+    def __init__(self, app: Application, get_relation: Callable) -> None:
         """Construct.
 
         Args:
@@ -24,7 +27,7 @@ class State:
         self.__dict__["_app"] = app
         self.__dict__["_get_relation"] = get_relation
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         """Set a value in the store with the given name.
 
         Args:
@@ -34,7 +37,7 @@ class State:
         v = json.dumps(value)
         self._get_relation().data[self._app].update({name: v})
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         """Get from the store the value with the given name, or None.
 
         Args:
@@ -46,7 +49,7 @@ class State:
         v = self._get_relation().data[self._app].get(name, "null")
         return json.loads(v)
 
-    def __delattr__(self, name):
+    def __delattr__(self, name: str) -> None:
         """Delete the value with the given name from the store, if it exists.
 
         Args:
@@ -55,9 +58,9 @@ class State:
         Returns:
             deleted value from store.
         """
-        return self._get_relation().data[self._app].pop(name, None)
+        self._get_relation().data[self._app].pop(name, None)
 
-    def is_ready(self):
+    def is_ready(self) -> bool:
         """Report whether the relation is ready to be used.
 
         Returns:

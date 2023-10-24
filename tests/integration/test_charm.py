@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 
 import pytest
-import utils
 import yaml
 from pytest_operator.plugin import OpsTest
 
@@ -18,7 +17,7 @@ APP_NAME = "openfga"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
+async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) -> None:
     """Build the charm-under-test and deploy it together with related charms.
 
     Assert on the unit status before any relations/configurations take place.

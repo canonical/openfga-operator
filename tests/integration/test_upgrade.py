@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 import pytest
-import utils
 import yaml
 from pytest_operator.plugin import OpsTest
 
@@ -19,7 +18,7 @@ APP_NAME = "openfga"
 
 
 @pytest.mark.abort_on_fail
-async def test_upgrade_running_application(ops_test: OpsTest, charm, test_charm):
+async def test_upgrade_running_application(ops_test: OpsTest, charm: str, test_charm: str) -> None:
     """Deploy latest published charm and upgrade it with charm-under-test.
 
     Assert on the application status and health check endpoint after upgrade/refresh took place.
