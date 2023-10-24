@@ -306,7 +306,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": "sh -c '/app/openfga run | tee {LOG_FILE}'",
+                    "command": "sh -c 'openfga run | tee {LOG_FILE}'",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -555,7 +555,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         migration_process = container.exec(
             command=[
-                "/app/openfga",
+                "openfga",
                 "migrate",
                 "--datastore-engine",
                 "postgres",

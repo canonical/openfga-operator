@@ -1,0 +1,4 @@
+pytest
+coverage[toml]
+charmhelpers
+-r requirements.txt
