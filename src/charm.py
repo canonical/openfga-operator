@@ -52,7 +52,7 @@ from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
-from ops.pebble import Error, ExecError, Layer
+from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
     DATABASE_NAME,
@@ -350,7 +350,14 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
-        self._container.restart(SERVICE_NAME)
+        try:
+            self._container.restart(SERVICE_NAME)
+        except ChangeError as err:
+            logger.error(str(err))
+            self.unit.status = BlockedStatus(
+                "Failed to restart the container, please consult the logs"
+            )
+            return
         self.unit.status = ActiveStatus()
 
     def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
