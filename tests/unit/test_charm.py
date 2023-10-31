@@ -4,211 +4,146 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import logging
-import os
-import pathlib
-import tempfile
-import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
 from ops.testing import Harness
-
-from charm import OpenFGAOperatorCharm
 
 logger = logging.getLogger(__name__)
 
 LOG_FILE = "/var/log/openfga-k8s"
+DB_USERNAME = "test-username"
+DB_PASSWORD = "test-password"
+DB_ENDPOINT = "postgresql-k8s-primary.namespace.svc.cluster.local:5432"
 
 
-class TestCharm(unittest.TestCase):
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
-    def setUp(self, *unused):
-        self.harness = Harness(OpenFGAOperatorCharm)
-        self.addCleanup(self.harness.cleanup)
-        self.harness.disable_hooks()
-        self.harness.add_oci_resource("openfga-image")
-        self.harness.begin()
+def setup_postgres_relation(harness: Harness) -> int:
+    db_relation_id = harness.add_relation("database", "postgresql-k8s")
+    harness.add_relation_unit(db_relation_id, "postgresql-k8s/0")
+    harness.update_relation_data(
+        db_relation_id,
+        "postgresql-k8s",
+        {
+            "data": '{"database": "hydra", "extra-user-roles": "SUPERUSER"}',
+            "endpoints": DB_ENDPOINT,
+            "password": DB_PASSWORD,
+            "username": DB_USERNAME,
+        },
+    )
 
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tempdir.cleanup)
-        self.harness.charm.framework.charm_dir = pathlib.Path(self.tempdir.name)
+    return db_relation_id
 
-        self.harness.container_pebble_ready("openfga")
 
-    def test_logrotate_config_pushed(self):
-        self.harness.set_leader(True)
+def setup_peer_relation(harness: Harness) -> None:
+    rel_id = harness.add_relation("peer", "openfga")
+    harness.add_relation_unit(rel_id, "openfga-k8s/1")
 
-        rel_id = self.harness.add_relation("peer", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-        self.harness.charm._state.token = "test-token"
-        self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test-db-uri"
-        self.harness.charm._state.private_key = "test-key"
-        self.harness.charm._state.certificate = "test-cert"
-        self.harness.charm._state.ca = "test-ca"
-        self.harness.charm._state.key_chain = "test-chain"
-        self.harness.charm._state.dns_name = "test-dns-name"
 
-        container = self.harness.model.unit.get_container("openfga")
-        self.harness.charm.on.openfga_pebble_ready.emit(container)
-        root = self.harness.get_filesystem_root("openfga")
-        config = (root / "etc/logrotate.d/openfga").read_text()
-        self.assertIn("/var/log/openfga-k8s {", config)
+def test_on_config_changed(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+) -> None:
+    harness.container_pebble_ready("openfga")
+    setup_peer_relation(harness)
+    setup_postgres_relation(harness)
 
-    @patch("secrets.token_urlsafe")
-    def test_on_config_changed(self, token_urlsafe):
-        token_urlsafe.return_value = "a_test_secret"
-
-        self.harness.set_leader(True)
-
-        rel_id = self.harness.add_relation("peer", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-
-        self.harness.charm._state.token = "test-token"
-        self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test-db-uri"
-        self.harness.charm._state.private_key = "test-key"
-        self.harness.charm._state.certificate = "test-cert"
-        self.harness.charm._state.ca = "test-ca"
-        self.harness.charm._state.key_chain = "test-chain"
-        self.harness.charm._state.dns_name = "test-dns-name"
-
-        container = self.harness.model.unit.get_container("openfga")
-        self.harness.charm.on.openfga_pebble_ready.emit(container)
-
-        self.harness.update_config(
-            {
-                "log-level": "debug",
-            }
-        )
-        self.harness.charm.on.config_changed.emit()
-
-        # Emit the pebble-ready event for openfga
-        self.harness.charm.on.openfga_pebble_ready.emit(container)
-
-        plan = self.harness.get_container_pebble_plan("openfga")
-        self.maxDiff = None
-        assert plan.to_dict() == {
-            "services": {
-                "openfga": {
-                    "override": "merge",
-                    "startup": "disabled",
-                    "summary": "OpenFGA",
-                    "command": "sh -c 'openfga run | tee {LOG_FILE}'",
-                    "environment": {
-                        "OPENFGA_AUTHN_METHOD": "preshared",
-                        "OPENFGA_AUTHN_PRESHARED_KEYS": "test-token",
-                        "OPENFGA_DATASTORE_ENGINE": "postgres",
-                        "OPENFGA_DATASTORE_URI": "test-db-uri",
-                        "OPENFGA_GRPC_TLS_CERT": "/app/certificate.pem",
-                        "OPENFGA_GRPC_TLS_ENABLED": "true",
-                        "OPENFGA_GRPC_TLS_KEY": "/app/key.pem",
-                        "OPENFGA_HTTP_TLS_CERT": "/app/certificate.pem",
-                        "OPENFGA_HTTP_TLS_ENABLED": "true",
-                        "OPENFGA_HTTP_TLS_KEY": "/app/key.pem",
-                        "OPENFGA_LOG_LEVEL": "debug",
-                        "OPENFGA_PLAYGROUND_ENABLED": "false",
-                    },
-                },
-            }
+    harness.update_config(
+        {
+            "log-level": "debug",
         }
+    )
+    harness.charm.on.config_changed.emit()
 
-    @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
-    @patch("charm.OpenFGAOperatorCharm._get_address")
-    @patch("secrets.token_urlsafe")
-    def test_on_openfga_relation_joined(
-        self,
-        token_urlsafe,
-        get_address,
-        create_openfga_store,
-        *unused,
-    ):
-        create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
-        get_address.return_value = "10.10.0.17"
-        token_urlsafe.return_value = "test-token"
+    plan = harness.get_container_pebble_plan("openfga")
+    assert plan.to_dict() == {
+        "services": {
+            "openfga": {
+                "override": "merge",
+                "startup": "disabled",
+                "summary": "OpenFGA",
+                "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                "environment": {
+                    "OPENFGA_AUTHN_METHOD": "preshared",
+                    "OPENFGA_AUTHN_PRESHARED_KEYS": mocked_token_urlsafe.return_value,
+                    "OPENFGA_DATASTORE_ENGINE": "postgres",
+                    "OPENFGA_DATASTORE_URI": mocked_dsn.return_value,
+                    "OPENFGA_LOG_LEVEL": "debug",
+                    "OPENFGA_PLAYGROUND_ENABLED": "false",
+                },
+            },
+        }
+    }
 
-        self.harness.set_leader(True)
 
-        rel_id = self.harness.add_relation("peer", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
+def test_on_openfga_relation_joined(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_get_address: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+) -> None:
+    harness.container_pebble_ready("openfga")
+    setup_peer_relation(harness)
+    setup_postgres_relation(harness)
 
-        self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test_db_uri"
+    rel_id = harness.add_relation("openfga", "openfga-client")
+    harness.add_relation_unit(rel_id, "openfga-client/0")
 
-        self.harness.update_config(
-            {
-                "log-level": "debug",
-            }
-        )
-        self.harness.charm.on.config_changed.emit()
+    harness.update_relation_data(
+        rel_id,
+        "openfga-client",
+        {"store_name": "test-store-name"},
+    )
 
-        self.harness.enable_hooks()
-        rel_id = self.harness.add_relation("openfga", "openfga-client")
-        self.harness.add_relation_unit(rel_id, "openfga-client/0")
+    mocked_create_openfga_store.assert_called_with(
+        mocked_token_urlsafe.return_value, "test-store-name"
+    )
+    relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
+    assert relation_data["address"] == mocked_get_address.return_value
+    assert relation_data["port"] == "8080"
+    assert relation_data["scheme"] == "http"
+    assert relation_data["token"] == mocked_token_urlsafe.return_value
+    assert relation_data["store_id"] == mocked_create_openfga_store.return_value
+    assert (
+        relation_data["dns_name"]
+        == "openfga-k8s-0.openfga-k8s-endpoints.openfga-model.svc.cluster.local"
+    )
 
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-client",
-            {"store_name": "test-store-name"},
-        )
 
-        create_openfga_store.assert_called_with("test-token", "test-store-name")
-        relation_data = self.harness.get_relation_data(rel_id, "openfga-k8s")
-        self.assertEqual(relation_data["address"], "10.10.0.17")
-        self.assertEqual(relation_data["port"], "8080")
-        self.assertEqual(relation_data["scheme"], "http")
-        self.assertEqual(relation_data["token"], "test-token")
-        self.assertEqual(relation_data["store_id"], "01GK13VYZK62Q1T0X55Q2BHYD6")
-        self.assertEqual(
-            relation_data["dns_name"], "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local"
-        )
+def test_on_openfga_relation_joined_with_secrets(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_get_address: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+    mocked_juju_version: MagicMock,
+) -> None:
+    harness.container_pebble_ready("openfga")
+    setup_peer_relation(harness)
+    setup_postgres_relation(harness)
 
-    @patch("charm.OpenFGAOperatorCharm._create_openfga_store")
-    @patch("charm.OpenFGAOperatorCharm._get_address")
-    @patch("secrets.token_urlsafe")
-    @patch.dict(os.environ, {"JUJU_VERSION": "3.2.1"})
-    def test_on_openfga_relation_joined_with_secrets(
-        self,
-        token_urlsafe,
-        get_address,
-        create_openfga_store,
-        *unused,
-    ):
-        create_openfga_store.return_value = "01GK13VYZK62Q1T0X55Q2BHYD6"
-        get_address.return_value = "10.10.0.17"
-        token_urlsafe.return_value = "test-token"
+    rel_id = harness.add_relation("openfga", "openfga-client")
+    harness.add_relation_unit(rel_id, "openfga-client/0")
 
-        self.harness.set_leader(True)
+    harness.update_relation_data(
+        rel_id,
+        "openfga-client",
+        {"store_name": "test-store-name"},
+    )
 
-        rel_id = self.harness.add_relation("peer", "openfga")
-        self.harness.add_relation_unit(rel_id, "openfga-k8s/1")
-
-        self.harness.charm._state.schema_created = "true"
-        self.harness.charm._state.db_uri = "test_db_uri"
-
-        self.harness.update_config(
-            {
-                "log-level": "debug",
-            }
-        )
-        self.harness.charm.on.config_changed.emit()
-
-        self.harness.enable_hooks()
-        rel_id = self.harness.add_relation("openfga", "openfga-client")
-        self.harness.add_relation_unit(rel_id, "openfga-client/0")
-
-        self.harness.update_relation_data(
-            rel_id,
-            "openfga-client",
-            {"store_name": "test-store-name"},
-        )
-
-        create_openfga_store.assert_called_with("test-token", "test-store-name")
-        relation_data = self.harness.get_relation_data(rel_id, "openfga-k8s")
-        self.assertEqual(relation_data["address"], "10.10.0.17")
-        self.assertEqual(relation_data["port"], "8080")
-        self.assertEqual(relation_data["scheme"], "http")
-        self.assertRegex(relation_data["token_secret_id"], "secret:.*")
-        self.assertEqual(relation_data["store_id"], "01GK13VYZK62Q1T0X55Q2BHYD6")
-        self.assertEqual(
-            relation_data["dns_name"], "openfga-k8s-0.openfga-k8s-endpoints.None.svc.cluster.local"
-        )
+    mocked_create_openfga_store.assert_called_with(
+        mocked_token_urlsafe.return_value, "test-store-name"
+    )
+    relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
+    assert relation_data["address"] == mocked_get_address.return_value
+    assert relation_data["port"] == "8080"
+    assert relation_data["scheme"] == "http"
+    assert relation_data["token_secret_id"].startswith("secret:")
+    assert relation_data["store_id"] == mocked_create_openfga_store.return_value
+    assert (
+        relation_data["dns_name"]
+        == "openfga-k8s-0.openfga-k8s-endpoints.openfga-model.svc.cluster.local"
+    )

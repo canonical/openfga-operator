@@ -4,13 +4,10 @@
 
 import asyncio
 import logging
-import time
 from pathlib import Path
 
 import pytest
-import utils
 import yaml
-from juju.action import Action
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -20,12 +17,12 @@ APP_NAME = "openfga"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
+async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) -> None:
     """Build the charm-under-test and deploy it together with related charms.
 
     Assert on the unit status before any relations/configurations take place.
     """
-    resources = {"openfga-image": METADATA["resources"]["openfga-image"]["upstream-source"]}
+    resources = {"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]}
     # Deploy the charm and wait for active/idle status
     logger.debug("deploying charms")
     await asyncio.gather(
@@ -45,38 +42,17 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
         ),
     )
 
-    logger.debug("waiting for postgresql")
-    await ops_test.model.wait_for_idle(
-        apps=["postgresql"],
-        status="active",
-        raise_on_blocked=True,
-        timeout=1000,
-    )
-
     logger.debug("adding postgresql relation")
     await ops_test.model.integrate(APP_NAME, "postgresql:database")
-
-    logger.debug("running schema-upgrade action")
-    openfga_unit = await utils.get_unit_by_name(APP_NAME, "0", ops_test.model.units)
-    for i in range(10):
-        action: Action = await openfga_unit.run_action("schema-upgrade")
-        result = await action.wait()
-        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
-        if result.results == {"result": "done", "return-code": 0}:
-            break
-        time.sleep(2)
-
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            timeout=60,
-        )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME, "postgresql"],
+        status="active",
+        timeout=1000,
+    )
 
     assert ops_test.model.applications[APP_NAME].status == "active"
 
     await ops_test.model.integrate(APP_NAME, "openfga-requires")
-
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
             apps=["openfga-requires"],
@@ -84,7 +60,5 @@ async def test_build_and_deploy(ops_test: OpsTest, charm, test_charm):
             timeout=60,
         )
 
-    openfga_requires_unit = await utils.get_unit_by_name(
-        "openfga-requires", "0", ops_test.model.units
-    )
+    openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message

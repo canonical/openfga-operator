@@ -18,65 +18,74 @@
 
 import logging
 import secrets
+from typing import TYPE_CHECKING, Any, Dict, Optional
+from urllib.parse import urlparse
 
 import requests
-from charms.data_platform_libs.v0.database_requires import DatabaseEvent, DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import (
+    DatabaseCreatedEvent,
+    DatabaseEndpointsChangedEvent,
+    DatabaseRequires,
+)
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from charms.tls_certificates_interface.v1.tls_certificates import (
-    CertificateAvailableEvent,
-    CertificateExpiringEvent,
-    CertificateRevokedEvent,
-    TLSCertificatesRequiresV1,
-    generate_csr,
-    generate_private_key,
-)
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
     IngressPerAppRevokedEvent,
 )
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
+from ops import (
+    ActionEvent,
+    ConfigChangedEvent,
+    HookEvent,
+    LeaderElectedEvent,
+    PebbleReadyEvent,
+    StartEvent,
+    StopEvent,
+    UpdateStatusEvent,
+)
+from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
-from ops.pebble import ExecError
-from requests.models import Response
+from ops.pebble import Error, ExecError, Layer
 
+from constants import (
+    DATABASE_NAME,
+    DATABASE_RELATION_NAME,
+    GRAFANA_RELATION_NAME,
+    INGRESS_RELATION_NAME,
+    LOG_FILE,
+    LOG_PROXY_RELATION_NAME,
+    METRIC_RELATION_NAME,
+    OPENFGA_SERVER_GRPC_PORT,
+    OPENFGA_SERVER_HTTP_PORT,
+    PEER_KEY_DB_MIGRATE_VERSION,
+    REQUIRED_SETTINGS,
+    SERVICE_NAME,
+    WORKLOAD_CONTAINER,
+)
+from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
+if TYPE_CHECKING:
+    from ops.pebble import LayerDict
+
 logger = logging.getLogger(__name__)
-
-WORKLOAD_CONTAINER = "openfga"
-
-REQUIRED_SETTINGS = [
-    "OPENFGA_DATASTORE_URI",
-    "OPENFGA_AUTHN_PRESHARED_KEYS",
-]
-
-LOG_FILE = "/var/log/openfga-k8s"
-LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
-
-OPENFGA_SERVER_PORT = 8080
-
-LOG_FILE = "/var/log/openfga-k8s"
-LOGROTATE_CONFIG_PATH = "/etc/logrotate.d/openfga"
-
-OPENFGA_SERVER_PORT = 8080
-
-SERVICE_NAME = "openfga"
 
 
 class OpenFGAOperatorCharm(CharmBase):
     """OpenFGA Operator Charm."""
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any) -> None:
         super().__init__(*args)
 
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
+        self._container = self.unit.get_container(WORKLOAD_CONTAINER)
+        self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container)
 
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -91,14 +100,14 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Grafana dashboard relation
         self._grafana_dashboards = GrafanaDashboardProvider(
-            self, relation_name="grafana-dashboard"
+            self, relation_name=GRAFANA_RELATION_NAME
         )
 
-        # Loki log-proxy relation (TODO(ale8k): Test this works properly)
+        # Loki log-proxy relation
         self.log_proxy = LogProxyConsumer(
             self,
             log_files=[LOG_FILE],
-            relation_name="log-proxy",
+            relation_name=LOG_PROXY_RELATION_NAME,
             promtail_resource_name="promtail-bin",
             container_name=WORKLOAD_CONTAINER,
         )
@@ -106,86 +115,167 @@ class OpenFGAOperatorCharm(CharmBase):
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_PORT}"]}]}],
+            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_HTTP_PORT}"]}]}],
             refresh_event=self.on.config_changed,
-            relation_name="metrics-endpoint",
+            relation_name=METRIC_RELATION_NAME,
         )
 
         # OpenFGA relation
         self.framework.observe(self.on.openfga_relation_changed, self._on_openfga_relation_changed)
 
-        # Certificates relation
-        self.certificates = TLSCertificatesRequiresV1(self, "certificates")
-        self.framework.observe(
-            self.on.certificates_relation_joined,
-            self._on_certificates_relation_joined,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_available,
-            self._on_certificate_available,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_expiring,
-            self._on_certificate_expiring,
-        )
-        self.framework.observe(
-            self.certificates.on.certificate_revoked,
-            self._on_certificate_revoked,
-        )
-
         # Ingress relation
-        self.ingress = IngressPerAppRequirer(self, relation_name="ingress", port=8080)
+        self.ingress = IngressPerAppRequirer(
+            self, relation_name=INGRESS_RELATION_NAME, port=OPENFGA_SERVER_HTTP_PORT
+        )
         self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
         # Database relation
         self.database = DatabaseRequires(
             self,
-            relation_name="database",
-            database_name="openfga",
+            relation_name=DATABASE_RELATION_NAME,
+            database_name=DATABASE_NAME,
         )
-        self.framework.observe(self.database.on.database_created, self._on_database_event)
+        self.framework.observe(self.database.on.database_created, self._on_database_created)
         self.framework.observe(
             self.database.on.endpoints_changed,
-            self._on_database_event,
+            self._on_database_changed,
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
-        port_http = ServicePort(8080, name=f"{self.app.name}-http", protocol="TCP")
-        port_grpc = ServicePort(8081, name=f"{self.app.name}-grpc", protocol="TCP")
+        port_http = ServicePort(
+            OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
+        )
+        port_grpc = ServicePort(
+            OPENFGA_SERVER_GRPC_PORT, name=f"{self.app.name}-grpc", protocol="TCP"
+        )
         self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc])
 
-    def _on_openfga_pebble_ready(self, event):
+    def _on_openfga_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Workload pebble ready."""
         self._update_workload(event)
 
-    def _on_config_changed(self, event):
+    def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         """Configuration changed."""
         self._update_workload(event)
 
-    def _on_start(self, event):
+    def _on_start(self, event: StartEvent) -> None:
         """Start OpenFGA."""
         self._update_workload(event)
 
-    def _on_stop(self, _):
+    def _on_stop(self, _: StopEvent) -> None:
         """Stop OpenFGA."""
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if container.can_connect():
+        if self._container.can_connect():
             try:
-                service = container.get_service(SERVICE_NAME)
+                service = self._container.get_service(SERVICE_NAME)
             except ModelError:
                 logger.warning("service not found, won't stop")
                 return
             if service.is_running():
-                container.stop(SERVICE_NAME)
+                self._container.stop(SERVICE_NAME)
         self.unit.status = WaitingStatus("service stopped")
 
-    def _on_update_status(self, _):
+    def _on_update_status(self, _: UpdateStatusEvent) -> None:
         """Update the status of the charm."""
         self._ready()
 
-    @requires_state_setter
-    def _create_token(self, event):
+    @property
+    def _domain_name(self) -> str:
+        if url := self.ingress.url:
+            # Remove scheme part from url
+            parsed = urlparse(url)
+            dns_name = parsed.netloc + parsed.path
+        else:
+            dns_name = "{}.{}-endpoints.{}.svc.cluster.local".format(
+                self.unit.name.replace("/", "-"), self.app.name, self.model.name
+            )
+        return dns_name
+
+    def _get_database_relation_info(self) -> Optional[Dict]:
+        """Get database info from relation data bag."""
+        if not self.database.relations:
+            return None
+
+        relation_id = self.database.relations[0].id
+        relation_data = self.database.fetch_relation_data()[relation_id]
+        return {
+            "username": relation_data.get("username"),
+            "password": relation_data.get("password"),
+            "endpoints": relation_data.get("endpoints"),
+            "database_name": DATABASE_NAME,
+        }
+
+    @property
+    def _dsn(self) -> Optional[str]:
+        db_info = self._get_database_relation_info()
+        if not db_info:
+            return None
+
+        return "postgres://{username}:{password}@{endpoints}/{database_name}".format(
+            username=db_info.get("username"),
+            password=db_info.get("password"),
+            endpoints=db_info.get("endpoints"),
+            database_name=db_info.get("database_name"),
+        )
+
+    @property
+    def _migration_peer_data_key(self) -> Optional[str]:
+        if not self.database.relations:
+            return None
+        return f"{PEER_KEY_DB_MIGRATE_VERSION}_{self.database.relations[0].id}"
+
+    @property
+    def _pebble_layer(self) -> Layer:
+        env_vars = map_config_to_env_vars(self)
+        env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
+        env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
+        env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
+
+        token = self._get_token()
+        if token:
+            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
+            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
+
+        env_vars = {key: value for key, value in env_vars.items() if value}
+        for setting in REQUIRED_SETTINGS:
+            if not env_vars.get(setting, ""):
+                self.unit.status = BlockedStatus(
+                    "{} configuration value not set".format(setting),
+                )
+                return Layer()
+
+        pebble_layer: LayerDict = {
+            "summary": "openfga layer",
+            "description": "pebble layer for openfga",
+            "services": {
+                SERVICE_NAME: {
+                    "override": "merge",
+                    "summary": "OpenFGA",
+                    "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                    "startup": "disabled",
+                    "environment": env_vars,
+                }
+            },
+            "checks": {
+                "openfga-http-check": {
+                    "override": "replace",
+                    "period": "1m",
+                    "http": {"url": f"http://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"},
+                },
+                "openfga-grpc-check": {
+                    "override": "replace",
+                    "period": "1m",
+                    "exec": {
+                        "command": f"grpc_health_probe -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                    },
+                },
+            },
+        }
+        return Layer(pebble_layer)
+
+    def _create_token(self) -> None:
+        if not self.unit.is_leader():
+            return
         token = secrets.token_urlsafe(32)
         if JujuVersion.from_environ().has_secrets:
             if not self._state.token_secret_id:
@@ -197,8 +287,7 @@ class OpenFGAOperatorCharm(CharmBase):
             if not self._state.token:
                 self._state.token = token
 
-    @requires_state
-    def _get_token(self, event):
+    def _get_token(self) -> Optional[str]:
         if JujuVersion.from_environ().has_secrets:
             if self._state.token_secret_id:
                 secret = self.model.get_secret(id=self._state.token_secret_id)
@@ -210,50 +299,30 @@ class OpenFGAOperatorCharm(CharmBase):
             return self._state.token
 
     @requires_state_setter
-    def _on_leader_elected(self, event):
+    def _on_leader_elected(self, event: LeaderElectedEvent) -> None:
         """Leader elected."""
-        # generate the private key if one is not present in the
-        # application data bucket of the peer relation
-        if not self._state.private_key:
-            private_key: bytes = generate_private_key(key_size=4096)
-            self._state.private_key = private_key.decode()
-
         self._update_workload(event)
 
-    # flake8: noqa: C901
     @requires_state
-    def _update_workload(self, event):
+    def _update_workload(self, event: HookEvent) -> None:
         """' Update workload with all available configuration data."""
-        # Quickly update logrotates config each workload update
-        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
-
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
         # make sure we can connect to the container
-        if not container.can_connect():
+        if not self._container.can_connect():
             logger.info("cannot connect to the openfga container")
             event.defer()
             return
 
-        self._create_token(event)
+        self._create_token()
+        if not self.model.relations[DATABASE_RELATION_NAME]:
+            self.unit.status = BlockedStatus("Missing required relation with postgresql")
+            return
 
-        # Quickly update logrotates config each workload update
-        self._push_to_workload(LOGROTATE_CONFIG_PATH, self._get_logrotate_config(), event)
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        # check if the database connection string has been
-        # recorded in the peer relation's application data bucket
-        if not self._state.db_uri:
-            logger.info("waiting for postgresql relation")
-            self.unit.status = BlockedStatus("Waiting for postgresql relation")
+        if not self.database.is_resource_created():
+            self.unit.status = WaitingStatus("Waiting for database creation")
             return
 
         # check if the schema has been upgraded
-        if not self._state.schema_created:
+        if self._migration_is_needed():
             logger.info("waiting for schema upgrade")
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
@@ -263,148 +332,125 @@ class OpenFGAOperatorCharm(CharmBase):
         if self.unit.is_leader():
             openfga_relation = self.model.get_relation("openfga")
             if openfga_relation and self.app in openfga_relation.data:
-                old_address = openfga_relation.data[self.app].get("address", "")
-                new_address = self._get_address(openfga_relation)
-                if old_address != new_address:
-                    openfga_relation.data[self.app].update({"address": new_address})
-                old_dns = openfga_relation.data[self.app].get("dns-name")
-                if old_dns != dnsname:
-                    openfga_relation.data[self.app].update({"dns-name": dnsname})
+                openfga_relation.data[self.app].update(
+                    {
+                        "address": self._get_address(openfga_relation),
+                        "dns-name": self._domain_name,
+                    }
+                )
 
-        env_vars = map_config_to_env_vars(self)
-        env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
-        env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-        env_vars["OPENFGA_DATASTORE_URI"] = self._state.db_uri
+        self._container.add_layer("openfga", self._pebble_layer, combine=True)
+        if not self._ready():
+            logger.info("workload container not ready - deferring")
+            event.defer()
+            return
 
-        token = self._get_token(event)
-        if token:
-            env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
-            env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
+        self._container.restart(SERVICE_NAME)
+        self.unit.status = ActiveStatus()
 
-        if self._state.certificate and self._state.private_key:
-            container.push("/app/certificate.pem", self._state.certificate, make_dirs=True)
-            container.push("/app/key.pem", self._state.private_key, make_dirs=True)
-            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
-            env_vars["OPENFGA_HTTP_TLS_CERT"] = "/app/certificate.pem"
-            env_vars["OPENFGA_HTTP_TLS_KEY"] = "/app/key.pem"
-            env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
-            env_vars["OPENFGA_GRPC_TLS_CERT"] = "/app/certificate.pem"
-            env_vars["OPENFGA_GRPC_TLS_KEY"] = "/app/key.pem"
+    def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
+        self._update_workload(event)
 
-        env_vars = {key: value for key, value in env_vars.items() if value}
+    @requires_state_setter
+    def _on_database_created(self, event: DatabaseCreatedEvent) -> None:
+        """Database event handler."""
+        if not self._container.can_connect():
+            event.defer()
+            logger.info("Cannot connect to container. Deferring the event.")
+            self.unit.status = WaitingStatus("Waiting to connect to container")
+            return
+
+        if not self._migration_is_needed():
+            self._update_workload(event)
+            return
+
+        if not self._run_sql_migration():
+            self.unit.status = BlockedStatus("Database migration job failed")
+            logger.error("Automigration job failed, please use the schema-upgrade action")
+            return
+
+        if not (peer_key := self._migration_peer_data_key):
+            logger.error("Missing database relation")
+            return
+
+        setattr(self._state, peer_key, self.openfga.get_version())
+        self._update_workload(event)
+
+    @requires_state_setter
+    def _on_database_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
+        """Database event handler."""
+        self._update_workload(event)
+
+    @requires_state_setter
+    def _on_database_relation_broken(self, event: RelationDepartedEvent) -> None:
+        """Database relation broken handler."""
+        self._update_workload(event)
+
+    def _migration_is_needed(self) -> Optional[bool]:
+        if not self._state.is_ready():
+            return None
+
+        if not (key := self._migration_peer_data_key):
+            return None
+
+        return getattr(self._state, key, None) != self.openfga.get_version()
+
+    def _run_sql_migration(self) -> bool:
+        """Runs database migration.
+
+        Returns True if migration was run successfully, else returns false.
+        """
+        if not (dsn := self._dsn):
+            logger.info("No database integration")
+            return False
+
+        try:
+            self.openfga.run_migration(dsn)
+            logger.info("Successfully executed the database migration")
+        except Error as e:
+            err_msg = e.stderr if isinstance(e, ExecError) else e
+            logger.error(f"Database migration failed: {err_msg}")
+            return False
+        return True
+
+    def _ready(self) -> bool:
+        if not self._state.is_ready():
+            return False
+
+        if self._migration_is_needed():
+            self.unit.status = BlockedStatus("Please run schema-upgrade action")
+            return False
+
+        if not self._container.can_connect():
+            logger.debug("cannot connect to workload container")
+            self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
+            return False
+
+        plan = self._container.get_plan()
+        service = plan.services.get(SERVICE_NAME)
+        if not service:
+            self.unit.status = WaitingStatus("waiting for service")
+            return False
+
+        env_vars = service.environment
         for setting in REQUIRED_SETTINGS:
             if not env_vars.get(setting, ""):
                 self.unit.status = BlockedStatus(
                     "{} configuration value not set".format(setting),
                 )
-                return
-
-        pebble_layer = {
-            "summary": "openfga layer",
-            "description": "pebble layer for openfga",
-            "services": {
-                SERVICE_NAME: {
-                    "override": "merge",
-                    "summary": "OpenFGA",
-                    "command": "sh -c 'openfga run | tee {LOG_FILE}'",
-                    "startup": "disabled",
-                    "environment": env_vars,
-                }
-            },
-            "checks": {
-                "openfga-check": {
-                    "override": "replace",
-                    "period": "1m",
-                    "http": {"url": "http://localhost:8080/healthz"},
-                }
-            },
-        }
-        container.add_layer("openfga", pebble_layer, combine=True)
-        if self._ready():
-            if container.get_service(SERVICE_NAME).is_running():
-                container.replan()
-            else:
-                container.start(SERVICE_NAME)
-            self.unit.status = ActiveStatus()
-            if self.unit.is_leader():
-                self.app.status = ActiveStatus()
-        else:
-            logger.info("workload container not ready - deferring")
-            event.defer()
-            return
-
-    def _on_peer_relation_changed(self, event):
-        self._update_workload(event)
-
-    @requires_state_setter
-    def _on_database_event(self, event: DatabaseEvent) -> None:
-        """Database event handler."""
-        # get the first endpoint from a comma separate list
-        ep = event.endpoints.split(",", 1)[0]
-        # compose the db connection string
-        uri = f"postgresql://{event.username}:{event.password}@{ep}/openfga"
-
-        # record the connection string
-        self._state.db_uri = uri
-
-        self._update_workload(event)
-
-    @requires_state_setter
-    def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
-        """Database relation broken handler."""
-        # when the database relation is broken, we unset the
-        # connection string and schema-created from the application
-        # bucket of the peer relation
-        del self._state.db_uri
-        del self._state.schema_created
-
-        self._update_workload(event)
-
-    def _ready(self) -> bool:
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-
-        if not self._state.is_ready():
-            return False
-
-        if not self._state.db_uri:
-            self.unit.status = BlockedStatus("Waiting for postgresql relation")
-            return False
-
-        if not self._state.schema_created:
-            self.unit.status = BlockedStatus("Please run schema-upgrade action")
-            return False
-
-        if container.can_connect():
-            plan = container.get_plan()
-            if plan.services.get(SERVICE_NAME) is None:
-                self.unit.status = WaitingStatus("waiting for service")
                 return False
 
-            env_vars = plan.services.get(SERVICE_NAME).environment
+        if self._container.get_service(SERVICE_NAME).is_running():
+            self.unit.status = ActiveStatus()
 
-            for setting in REQUIRED_SETTINGS:
-                if not env_vars.get(setting, ""):
-                    self.unit.status = BlockedStatus(
-                        "{} configuration value not set".format(setting),
-                    )
-                    return False
+        return True
 
-            if container.get_service(SERVICE_NAME).is_running():
-                self.unit.status = ActiveStatus()
-
-            return True
-        else:
-            logger.debug("cannot connect to workload container")
-            self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
-            return False
-
-    def is_openfga_server_running(self) -> bool:
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if not container.can_connect():
+    def _is_openfga_server_running(self) -> bool:
+        if not self._container.can_connect():
             logger.error(f"Cannot connect to container {WORKLOAD_CONTAINER}")
             return False
         try:
-            svc = container.get_service(SERVICE_NAME)
+            svc = self._container.get_service(SERVICE_NAME)
         except ModelError:
             logger.error(f"{SERVICE_NAME} is not running")
             return False
@@ -414,27 +460,23 @@ class OpenFGAOperatorCharm(CharmBase):
         return True
 
     @requires_state_setter
-    def _on_openfga_relation_changed(self, event: RelationChangedEvent):
+    def _on_openfga_relation_changed(self, event: RelationChangedEvent) -> None:
         """Open FGA relation changed."""
         # the requires side will put the store_name in its
         # application bucket
+        if not event.app:
+            return
         store_name = event.relation.data[event.app].get("store_name", "")
         if not store_name:
             return
 
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        token = self._get_token(event)
+        token = self._get_token()
         if not token:
             logger.error("token not found")
             event.defer()
             return
 
-        if not self.is_openfga_server_running():
+        if not self._is_openfga_server_running():
             event.defer()
             return
 
@@ -449,8 +491,8 @@ class OpenFGAOperatorCharm(CharmBase):
             "store_id": store_id,
             "address": self._get_address(event.relation),
             "scheme": "http",
-            "port": "8080",
-            "dns_name": dnsname,
+            "port": str(OPENFGA_SERVER_HTTP_PORT),
+            "dns_name": self._domain_name,
         }
 
         if JujuVersion.from_environ().has_secrets:
@@ -463,20 +505,17 @@ class OpenFGAOperatorCharm(CharmBase):
 
         event.relation.data[self.app].update(data)
 
-    def _get_address(self, relation: Relation):
+    def _get_address(self, relation: Relation) -> str:
         """Returns the ip address to be used with the specified relation."""
         return self.model.get_binding(relation).network.ingress_address.exploded
 
-    def _create_openfga_store(self, token: str, store_name: str):
+    def _create_openfga_store(self, token: str, store_name: str) -> Optional[str]:
         logger.info("creating store: {}".format(store_name))
-
-        address = "http://localhost:8080"
-        headers = {"Authorization": "Bearer {}".format(token)}
 
         # we need to check if the store with the specified name already
         # exists, otherwise OpenFGA will happily create a new store with
         # the same name, but different id.
-        stores = self._list_stores(address, headers)
+        stores = self._list_stores(token)
         for store in stores:
             if store["name"] == store_name:
                 logger.info(
@@ -486,224 +525,62 @@ class OpenFGAOperatorCharm(CharmBase):
                 )
                 return store["id"]
 
-        # to create a new store we issue a POST request to /stores
-        # endpoint
-        headers["Content-Type"] = "application/json"
-        response = requests.post(
-            "{}/stores".format(address),
-            json={"name": store_name},
-            headers=headers,
-            verify=False,
-        )
-        if response.status_code == 200 or response.status_code == 201:
-            # if we successfully created the store, we return its id.
-            data = response.json()
-            return data["id"]
-
-        logger.error(
-            "failed to create the openfga store: {} {}".format(
-                response.status_code,
-                response.json(),
-            )
-        )
-        return ""
-
-    def _list_stores(self, openfga_host: str, headers, continuation_token="") -> list:
-        # to list stores we need to issue a GET request to the /stores
-        # endpoint
-        response: Response = requests.get(
-            "{}/stores".format(openfga_host),
-            headers=headers,
-            verify=False,
-        )
-        if response.status_code != 200:
-            logger.error("to list existing openfga store: {}".format(response.json()))
+        try:
+            store = self.openfga.create_store(token, store_name)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to request OpenFGA API: {e}")
             return None
 
-        data = response.json()
-        logger.info("received list stores response {}".format(data))
-        stores = []
-        for store in data["stores"]:
-            stores.append({"id": store["id"], "name": store["name"]})
+        return store["id"]
+
+    def _list_stores(self, token: str, continuation_token: Optional[str] = None) -> list:
+        # to list stores we need to issue a GET request to the /stores
+        # endpoint
+        data = self.openfga.list_stores(token, continuation_token=continuation_token)
+        logger.debug("received list stores response {}".format(data))
+        stores = [{"id": store["id"], "name": store["name"]} for store in data["stores"]]
 
         # if the response contains a continuation_token, we
         # need an additional request to fetch all the stores
-        ctoken = data["continuation_token"]
-        if not ctoken:
-            return stores
-        else:
-            return stores.append(
-                self._list_stores(
-                    openfga_host,
-                    headers,
-                    continuation_token=ctoken,
-                )
+        if ctoken := data["continuation_token"]:
+            # TODO(nsklikas): Python does not support tail recursion. We should
+            # gather all the stores iteratively. We need to first decide if we
+            # want to keep this logic. (are stores with the same name really a problem?)
+            return stores + self._list_stores(
+                token,
+                continuation_token=ctoken,
             )
+        return stores
 
     @requires_state_setter
-    def _on_schema_upgrade_action(self, event):
+    def _on_schema_upgrade_action(self, event: ActionEvent) -> None:
         """Performs a schema upgrade on the configurable database."""
-        db_uri = self._state.db_uri
-        if not db_uri:
-            event.set_results({"error": "missing postgres relation"})
+        if not self._container.can_connect():
+            event.fail("Cannot connect to the workload container")
             return
 
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if not container.can_connect():
-            event.set_results({"error": "cannot connect to the workload container"})
-            return
-
-        migration_process = container.exec(
-            command=[
-                "openfga",
-                "migrate",
-                "--datastore-engine",
-                "postgres",
-                "--datastore-uri",
-                "{}".format(db_uri),
-            ],
-            encoding="utf-8",
-        )
-
-        try:
-            stdout = migration_process.wait_output()
-            self.unit.status = WaitingStatus("Schema migration done")
+        if self._run_sql_migration():
             event.set_results({"result": "done"})
-        except ExecError as e:
-            if "already exists" in e.stderr:
-                logger.info("schema migration failed because the schema already exists")
-                self.unit.status = WaitingStatus("Schema migration done")
-                event.set_results({"result": "done"})
-            else:
-                logger.error(
-                    "failed to run schema migration: err {} db_uri {}".format(e.stderr, db_uri)
-                )
-                event.set_results({"std-err": e.stderr, "std-out": stdout, "db_uri": db_uri})
-        self._state.schema_created = "true"
+        else:
+            event.set_results({"result": "failed to migrate database"})
+            self.unit.status = BlockedStatus("Database migration job failed")
+            return
 
         logger.info("schema upgraded")
+        if not (peer_key := self._migration_peer_data_key):
+            logger.error("Missing database relation")
+            return
+        setattr(self._state, peer_key, self.openfga.get_version())
         self._update_workload(event)
 
-    @requires_state_setter
-    def _on_certificates_relation_joined(self, event: RelationJoinedEvent) -> None:
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"), self.app.name, self.model.name
-        )
-
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        private_key = self._state.private_key
-        csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=dnsname,
-        )
-        self._state.csr = csr.decode()
-
-        self.certificates.request_certificate_creation(certificate_signing_request=csr)
-
-    @requires_state_setter
-    def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:
-        self._state.certificate = event.certificate
-        self._state.ca = event.ca
-        self._state.key_chain = event.chain
-
+    def _on_ingress_ready(self, event: IngressPerAppReadyEvent) -> None:
         self._update_workload(event)
 
-    @requires_state_setter
-    def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
-        old_csr = self._state.csr
-        private_key = self._state.private_key
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"),
-            self.app.name,
-            self.model.name,
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        new_csr = generate_csr(private_key=private_key.encode(), subject=dnsname)
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-
-        self._state.csr = new_csr.decode()
-
-        self._update_workload()
-
-    @requires_state_setter
-    def _on_certificate_revoked(self, event: CertificateRevokedEvent) -> None:
-        old_csr = self._state.csr
-        private_key = self._state.private_key
-
-        dnsname = "{}.{}-endpoints.{}.svc.cluster.local".format(
-            self.unit.name.replace("/", "-"),
-            self.app.name,
-            self.model.name,
-        )
-        if self._state.dns_name:
-            dnsname = self._state.dns_name
-
-        new_csr = generate_csr(
-            private_key=private_key.encode(),
-            subject=dnsname,
-        )
-        self.certificates.request_certificate_renewal(
-            old_certificate_signing_request=old_csr,
-            new_certificate_signing_request=new_csr,
-        )
-
-        self._state.csr = new_csr.decode()
-        del self._state.certificate
-        del self._state.ca
-        del self._state.key_chain
-
-        self.unit.status = WaitingStatus("Waiting for new certificate")
-
-        self._update_workload()
-
-    @requires_state_setter
-    def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
-        self._state.dns_name = event.url
-
+    def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
         self._update_workload(event)
 
-    @requires_state_setter
-    def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
-        del self._state.dns_name
 
-        self._update_workload(event)
-
-    def _get_logrotate_config(self):
-        return f"""{LOG_FILE} {"{"}
-            rotate 3
-            daily
-            compress
-            delaycompress
-            missingok
-            notifempty
-            size 10M
-{"}"}
-"""
-
-    def _push_to_workload(self, filename, content, event):
-        """Pushes file to the workload container.
-
-        Create file on the workload container with
-        the specified content.
-        """
-        container = self.unit.get_container(WORKLOAD_CONTAINER)
-        if container.can_connect():
-            logger.info("pushing file {} to the workload container".format(filename))
-            container.push(filename, content, make_dirs=True)
-        else:
-            logger.info("workload container not ready - deferring")
-            event.defer()
-
-
-def map_config_to_env_vars(charm, **additional_env):
+def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:
     """Map config values to environment variables.
 
     Maps the config values provided in config.yaml into environment

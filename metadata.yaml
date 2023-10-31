@@ -36,18 +36,15 @@ requires:
   database:
     interface: postgresql_client
     limit: 1
-  certificates:
-    interface: tls-certificates
-    limit: 1
   log-proxy:
     interface: loki_push_api
     optional: true
     limit: 1
 containers:
   openfga:
-    resource: openfga-image
+    resource: oci-image
 resources:
-  openfga-image:
+  oci-image:
     type: oci-image
     description: OCI image for OpenFGA
     upstream-source: ghcr.io/canonical/openfga:1.3.3
