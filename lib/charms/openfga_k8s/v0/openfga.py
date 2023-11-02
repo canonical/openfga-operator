@@ -80,6 +80,7 @@ from ops import (
 from ops.charm import CharmEvents, RelationChangedEvent, RelationEvent
 from ops.framework import EventSource, Object
 from pydantic import BaseModel, Field, validator
+from typing_extensions import Self
 
 # The unique Charmhub library identifier, never change it
 LIBID = "216f28cfeea4447b8a576f01bfbecdf5"
@@ -116,14 +117,14 @@ class DatabagModel(BaseModel):
         """Allow instantiating this class by field name (instead of forcing alias)."""
 
     @classmethod
-    def _load_value(cls, v: str):
+    def _load_value(cls, v: str) -> Union[Dict, str]:
         try:
             return json.loads(v)
         except json.JSONDecodeError:
             return v
 
     @classmethod
-    def load(cls, databag: MutableMapping):
+    def load(cls, databag: MutableMapping) -> Self:
         """Load this model from a Juju databag."""
         try:
             data = {
@@ -135,7 +136,7 @@ class DatabagModel(BaseModel):
 
         return cls.parse_raw(json.dumps(data))  # type: ignore
 
-    def dump(self, databag: Optional[MutableMapping] = None):
+    def dump(self, databag: Optional[MutableMapping] = None) -> MutableMapping:
         """Write the contents of this model to Juju databag."""
         if databag is None:
             databag = {}
@@ -173,7 +174,7 @@ class OpenfgaProviderAppData(DatabagModel):
     dns_name: str = Field(description="The openfga server dns name")
 
     @validator("token_secret_id", pre=True)
-    def validate_token(cls, v, values):  # noqa: N805  # pydantic wants 'cls' as first arg
+    def validate_token(cls, v: str, values: Dict) -> str:  # noqa: N805
         """Validate token_secret_id arg."""
         if not v and not values["token"]:
             raise ValueError("invalid scheme: neither of token and token_secret_id were defined")
@@ -202,7 +203,7 @@ class OpenFGAStoreRemovedEvent(HookEvent):
     """Event emitted when a new OpenFGA store is removed."""
 
 
-class OpenFGAEvents(CharmEvents):
+class OpenFGARequirerEvents(CharmEvents):
     """Custom charm events."""
 
     openfga_store_created = EventSource(OpenFGAStoreCreateEvent)
@@ -218,9 +219,11 @@ class OpenFGARequires(Object):
         - relation-departed
     """
 
-    on = OpenFGAEvents()
+    on = OpenFGARequirerEvents()
 
-    def __init__(self, charm, store_name: str, relation_name: str = RELATION_NAME):
+    def __init__(
+        self, charm: CharmBase, store_name: str, relation_name: str = RELATION_NAME
+    ) -> None:
         super().__init__(charm, relation_name)
         self.charm = charm
         self.relation_name = relation_name
@@ -237,7 +240,7 @@ class OpenFGARequires(Object):
         )
 
     def _on_relation_created(self, event: RelationCreatedEvent) -> None:
-        """Handle the relation-joined event."""
+        """Handle the relation-created event."""
         databag = event.relation.data[self.model.app]
         OpenfgaRequirerAppData(store_name=self.store_name).dump(databag)
 
@@ -290,7 +293,7 @@ class OpenFGARequires(Object):
 class OpenFGAStoreRequestEvent(RelationEvent):
     """Event emitted when a new OpenFGA store is requested."""
 
-    def __init__(self, handle: Handle, relation: Relation, store_name: str):
+    def __init__(self, handle: Handle, relation: Relation, store_name: str) -> None:
         super().__init__(handle, relation)
         self.store_name = store_name
 
@@ -306,7 +309,7 @@ class OpenFGAStoreRequestEvent(RelationEvent):
         self.store_name = snapshot["store_name"]
 
 
-class OpenFGAEvents(CharmEvents):
+class OpenFGAProviderEvents(CharmEvents):
     """Custom charm events."""
 
     openfga_store_requested = EventSource(OpenFGAStoreRequestEvent)
@@ -315,7 +318,7 @@ class OpenFGAEvents(CharmEvents):
 class OpenFGAProvider(Object):
     """Requirer side of the openfga relation."""
 
-    on = OpenFGAEvents()
+    on = OpenFGAProviderEvents()
 
     def __init__(self, charm: CharmBase, relation_name: str = RELATION_NAME):
         super().__init__(charm, relation_name)
@@ -327,8 +330,10 @@ class OpenFGAProvider(Object):
             self._on_relation_changed,
         )
 
-    def _on_relation_changed(self, event: RelationChangedEvent):
-        data = event.relation.data[event.app]
+    def _on_relation_changed(self, event: RelationChangedEvent) -> None:
+        if not (app := event.app):
+            return
+        data = event.relation.data[app]
         if not data:
             logger.info("No relation data available.")
             return
@@ -350,7 +355,7 @@ class OpenFGAProvider(Object):
         token: Optional[str] = None,
         token_secret_id: Optional[str] = None,
         relation_id: Optional[int] = None,
-    ):
+    ) -> None:
         """Update a relation databag."""
         if not self.model.unit.is_leader():
             return
@@ -377,7 +382,7 @@ class OpenFGAProvider(Object):
             logger.info(msg, exc_info=True)
             raise DataValidationError(msg) from e
 
-    def update_server_info(self, address: str, scheme: str, port: str, dns_name: str):
+    def update_server_info(self, address: str, scheme: str, port: str, dns_name: str) -> None:
         """Update all the relations databags with the server info."""
         if not self.model.unit.is_leader():
             return
