@@ -59,10 +59,10 @@ juju remove-relation openfga-k8s application
 The Charmed PostgreSQL Operator also supports TLS encryption on internal and external connections. To enable TLS:
 
 ```shell
-# Deploy the TLS Certificates Operator. 
+# Deploy the TLS Certificates Operator.
 juju deploy tls-certificates-operator --channel=edge
 # Add the necessary configurations for TLS.
-juju config tls-certificates-operator generate-self-signed-certificates="true" ca-common-name="Test CA" 
+juju config tls-certificates-operator generate-self-signed-certificates="true" ca-common-name="Test CA"
 # Enable TLS via relation.
 juju relate openfga-k8s tls-certificates-operator
 # Disable TLS by removing relation.
@@ -75,7 +75,7 @@ Note: The TLS settings shown here are for self-signed-certificates, which are no
 Security issues in the Charmed OpenFGA k8s Operator can be reported through [LaunchPad](https://wiki.ubuntu.com/DebuggingSecurity#How%20to%20File). Please do not file GitHub issues about security issues.
 
 ## Contributing
-Please see the [Juju SDK docs](https://juju.is/docs/sdk) for guidelines on enhancements to this charm following best practice guidelines, and [CONTRIBUTING.md](https://github.com/canonical/cs-openfga/blob/main/charms/openfga-k8s/CONTRIBUTING.md) for developer guidance.
+Please see the [Juju SDK docs](https://juju.is/docs/sdk) for guidelines on enhancements to this charm following best practice guidelines, and [CONTRIBUTING.md](https://github.com/canonical/openfga-operator/blob/main/CONTRIBUTING.md) for developer guidance.
 
 ## License
-The OpenFGA k8s charm [is distributed](https://github.com/canonical/cs-openfga/blob/main/charms/openfga-k8s/LICENSE) under the Apache Software License, version 2.0. It installs/operates/depends on [OpenFGA](https://github.com/openfga/openfga), which [is licensed](https://github.com/openfga/openfga/blob/main/LICENSE) under the Apache Software License, version 2.0.
+The OpenFGA k8s charm [is distributed](https://github.com/canonical/openfga-operator/blob/main/LICENSE) under the Apache Software License, version 2.0. It installs/operates/depends on [OpenFGA](https://github.com/openfga/openfga), which [is licensed](https://github.com/openfga/openfga/blob/main/LICENSE) under the Apache Software License, version 2.0.
