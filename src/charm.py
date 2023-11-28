@@ -19,7 +19,6 @@
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any, Dict, Optional
-from urllib.parse import urlparse
 
 import requests
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -32,7 +31,7 @@ from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v0.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from charms.traefik_k8s.v1.ingress import (
+from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
     IngressPerAppRevokedEvent,
@@ -58,7 +57,8 @@ from constants import (
     DATABASE_NAME,
     DATABASE_RELATION_NAME,
     GRAFANA_RELATION_NAME,
-    INGRESS_RELATION_NAME,
+    GRPC_INGRESS_RELATION_NAME,
+    HTTP_INGRESS_RELATION_NAME,
     LOG_FILE,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
@@ -128,12 +128,26 @@ class OpenFGAOperatorCharm(CharmBase):
             self.openfga_relation.on.openfga_store_requested, self._on_openfga_store_requested
         )
 
-        # Ingress relation
-        self.ingress = IngressPerAppRequirer(
-            self, relation_name=INGRESS_RELATION_NAME, port=OPENFGA_SERVER_HTTP_PORT
+        # Ingress HTTP relation
+        self.http_ingress = IngressPerAppRequirer(
+            self,
+            relation_name=HTTP_INGRESS_RELATION_NAME,
+            port=OPENFGA_SERVER_HTTP_PORT,
+            strip_prefix=True,
         )
-        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
-        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
+        self.framework.observe(self.http_ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.http_ingress.on.revoked, self._on_ingress_revoked)
+
+        # Ingress GRPC relation
+        self.grpc_ingress = IngressPerAppRequirer(
+            self,
+            relation_name=GRPC_INGRESS_RELATION_NAME,
+            port=OPENFGA_SERVER_GRPC_PORT,
+            strip_prefix=True,
+            scheme="h2c",
+        )
+        self.framework.observe(self.grpc_ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.grpc_ingress.on.revoked, self._on_ingress_revoked)
 
         # Database relation
         self.database = DatabaseRequires(
@@ -184,17 +198,25 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    @property
-    def _domain_name(self) -> str:
-        if url := self.ingress.url:
-            # Remove scheme part from url
-            parsed = urlparse(url)
-            dns_name = parsed.netloc + parsed.path
-        else:
-            dns_name = "{}.{}-endpoints.{}.svc.cluster.local".format(
+    def _get_http_api_url(self, address: Optional[str] = None) -> str:
+        if not address:
+            address = "{}.{}-endpoints.{}.svc.cluster.local".format(
                 self.unit.name.replace("/", "-"), self.app.name, self.model.name
             )
-        return dns_name
+        scheme = "http"
+        url = f"{scheme}://{address}:{OPENFGA_SERVER_HTTP_PORT}"
+
+        return url
+
+    def _get_grpc_api_url(self, address: Optional[str] = None) -> str:
+        if not address:
+            address = "{}.{}-endpoints.{}.svc.cluster.local".format(
+                self.unit.name.replace("/", "-"), self.app.name, self.model.name
+            )
+        scheme = "http"
+        url = f"{scheme}://{address}:{OPENFGA_SERVER_GRPC_PORT}"
+
+        return url
 
     def _get_database_relation_info(self) -> Optional[Dict]:
         """Get database info from relation data bag."""
@@ -590,21 +612,9 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent) -> None:
         self._update_workload(event)
-        self.openfga_relation.update_server_info(
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
-        )
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
         self._update_workload(event)
-        self.openfga_relation.update_server_info(
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
-        )
 
 
 def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:

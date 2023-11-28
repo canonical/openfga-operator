@@ -30,7 +30,10 @@ provides:
   metrics-endpoint:
     interface: prometheus_scrape
 requires:
-  ingress:
+  http-ingress:
+    interface: ingress
+    limit: 1
+  grpc-ingress:
     interface: ingress
     limit: 1
   database:
