@@ -233,6 +233,10 @@ class OpenFGAOperatorCharm(CharmBase):
         }
 
     @property
+    def _log_level(self) -> str:
+        return self.config["log-level"]
+
+    @property
     def _dsn(self) -> Optional[str]:
         db_info = self._get_database_relation_info()
         if not db_info:
@@ -278,7 +282,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                    "command": f"sh -c 'openfga run --log-format json --log-level {self._log_level} 2>&1 | tee -a {LOG_FILE}'",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
