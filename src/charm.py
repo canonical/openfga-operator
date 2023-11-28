@@ -29,7 +29,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
-from charms.openfga_k8s.v0.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
+from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
@@ -198,26 +198,6 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    def _get_http_api_url(self, address: Optional[str] = None) -> str:
-        if not address:
-            address = "{}.{}-endpoints.{}.svc.cluster.local".format(
-                self.unit.name.replace("/", "-"), self.app.name, self.model.name
-            )
-        scheme = "http"
-        url = f"{scheme}://{address}:{OPENFGA_SERVER_HTTP_PORT}"
-
-        return url
-
-    def _get_grpc_api_url(self, address: Optional[str] = None) -> str:
-        if not address:
-            address = "{}.{}-endpoints.{}.svc.cluster.local".format(
-                self.unit.name.replace("/", "-"), self.app.name, self.model.name
-            )
-        scheme = "http"
-        url = f"{scheme}://{address}:{OPENFGA_SERVER_GRPC_PORT}"
-
-        return url
-
     def _get_database_relation_info(self) -> Optional[Dict]:
         """Get database info from relation data bag."""
         if not self.database.relations:
@@ -358,17 +338,8 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
 
-        # if openfga relation exists, make sure the address is
-        # updated
-        if self.unit.is_leader():
-            openfga_relation = self.model.get_relation("openfga")
-            if openfga_relation and self.app in openfga_relation.data:
-                openfga_relation.data[self.app].update(
-                    {
-                        "address": self._get_address(openfga_relation),
-                        "dns_name": self._domain_name,
-                    }
-                )
+        # if openfga relation exists, make sure the address is updated
+        self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
 
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
@@ -537,10 +508,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.openfga_relation.update_relation_info(
             store_id=store_id,
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
+            http_api_url=self.http_ingress.url,
             token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,

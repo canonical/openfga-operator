@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import json
 import logging
 from unittest.mock import MagicMock
 
@@ -31,6 +32,17 @@ def setup_postgres_relation(harness: Harness) -> int:
     )
 
     return db_relation_id
+
+
+def setup_ingress_relation(harness: Harness, type: str) -> int:
+    relation_id = harness.add_relation(f"{type}-ingress", f"{type}-traefik")
+    harness.add_relation_unit(relation_id, f"{type}-traefik/0")
+    harness.update_relation_data(
+        relation_id,
+        f"{type}-traefik",
+        {"ingress": json.dumps({"url": f"http://{type}:80/{harness.model.name}-openfga"})},
+    )
+    return relation_id
 
 
 def setup_peer_relation(harness: Harness) -> None:
@@ -62,7 +74,7 @@ def test_on_config_changed(
                 "override": "merge",
                 "startup": "disabled",
                 "summary": "OpenFGA",
-                "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                "command": f"sh -c 'openfga run --log-format json --log-level debug 2>&1 | tee -a {LOG_FILE}'",
                 "environment": {
                     "OPENFGA_AUTHN_METHOD": "preshared",
                     "OPENFGA_AUTHN_PRESHARED_KEYS": mocked_token_urlsafe.return_value,
@@ -81,9 +93,10 @@ def test_on_openfga_relation_joined(
     mocked_token_urlsafe: MagicMock,
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
-    mocked_get_address: MagicMock,
     mocked_create_openfga_store: MagicMock,
 ) -> None:
+    ip = "10.0.0.1"
+    harness.add_network(ip)
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)
@@ -101,15 +114,44 @@ def test_on_openfga_relation_joined(
         mocked_token_urlsafe.return_value, "test-store-name"
     )
     relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
-    assert relation_data["address"] == mocked_get_address.return_value
-    assert relation_data["port"] == "8080"
-    assert relation_data["scheme"] == "http"
+    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
+    assert relation_data["http_api_url"] == f"http://{ip}:8080"
     assert relation_data["token"] == mocked_token_urlsafe.return_value
     assert relation_data["store_id"] == mocked_create_openfga_store.return_value
-    assert (
-        relation_data["dns_name"]
-        == "openfga-k8s-0.openfga-k8s-endpoints.openfga-model.svc.cluster.local"
+
+
+def test_on_openfga_relation_joined_with_ingress(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_migration_is_needed: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+) -> None:
+    ip = "10.0.0.1"
+    harness.add_network(ip)
+    harness.container_pebble_ready("openfga")
+    setup_peer_relation(harness)
+    setup_postgres_relation(harness)
+    setup_ingress_relation(harness, "grpc")
+    setup_ingress_relation(harness, "http")
+
+    rel_id = harness.add_relation("openfga", "openfga-client")
+    harness.add_relation_unit(rel_id, "openfga-client/0")
+
+    harness.update_relation_data(
+        rel_id,
+        "openfga-client",
+        {"store_name": "test-store-name"},
     )
+
+    mocked_create_openfga_store.assert_called_with(
+        mocked_token_urlsafe.return_value, "test-store-name"
+    )
+    relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
+    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
+    assert relation_data["http_api_url"] == "http://http:80/openfga-model-openfga"
+    assert relation_data["token"] == mocked_token_urlsafe.return_value
+    assert relation_data["store_id"] == mocked_create_openfga_store.return_value
 
 
 def test_on_openfga_relation_joined_with_secrets(
@@ -117,10 +159,11 @@ def test_on_openfga_relation_joined_with_secrets(
     mocked_token_urlsafe: MagicMock,
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
-    mocked_get_address: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
 ) -> None:
+    ip = "10.0.0.1"
+    harness.add_network(ip)
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)
@@ -138,12 +181,7 @@ def test_on_openfga_relation_joined_with_secrets(
         mocked_token_urlsafe.return_value, "test-store-name"
     )
     relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
-    assert relation_data["address"] == mocked_get_address.return_value
-    assert relation_data["port"] == "8080"
-    assert relation_data["scheme"] == "http"
+    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
+    assert relation_data["http_api_url"] == f"http://{ip}:8080"
     assert relation_data["token_secret_id"].startswith("secret:")
     assert relation_data["store_id"] == mocked_create_openfga_store.return_value
-    assert (
-        relation_data["dns_name"]
-        == "openfga-k8s-0.openfga-k8s-endpoints.openfga-model.svc.cluster.local"
-    )

@@ -396,7 +396,9 @@ class OpenFGAProvider(Object):
             logger.info(msg, exc_info=True)
             raise DataValidationError(msg) from e
 
-    def update_server_info(self, grpc_api_url: Optional[str] = None, http_api_url: Optional[str] = None) -> None:
+    def update_server_info(
+        self, grpc_api_url: Optional[str] = None, http_api_url: Optional[str] = None
+    ) -> None:
         """Update all the relations databags with the server info."""
         if not self.model.unit.is_leader():
             return
