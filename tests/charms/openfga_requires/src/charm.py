@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from charms.openfga_k8s.v0.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
-from ops import UpdateStatusEvent
+from ops import EventBase
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, WaitingStatus
@@ -46,16 +46,21 @@ class OpenfgaRequiresCharm(CharmBase):
             self.openfga.on.openfga_store_created,
             self._on_openfga_store_created,
         )
+        self.framework.observe(
+            self.openfga.on.openfga_store_created,
+            self._on_openfga_store_created,
+        )
 
-    def _on_update_status(self, event: UpdateStatusEvent) -> None:
-        if not self._state.is_ready():
+    def _on_update_status(self, event: EventBase) -> None:
+        info = self.openfga.get_store_info()
+        if not info:
             event.defer()
             return
 
-        if self._state.store_id:
+        if info.store_id:
             self.unit.status = ActiveStatus(
                 "running with store {}".format(
-                    self._state.store_id,
+                    info.store_id,
                 )
             )
         else:
@@ -65,32 +70,22 @@ class OpenfgaRequiresCharm(CharmBase):
         if not self.unit.is_leader():
             return
 
-        if not self._state.is_ready():
-            event.defer()
-            return
-
         if not event.store_id:
             return
 
-        logger.info("store id {}".format(event.store_id))
-        logger.info("token_secret_id {}".format(event.token_secret_id))
-        logger.info("token {}".format(event.token))
-        logger.info("address {}".format(event.address))
-        logger.info("port {}".format(event.port))
-        logger.info("scheme {}".format(event.scheme))
+        info = self.openfga.get_store_info()
+        if not info:
+            event.defer()
+            return
 
-        self._state.store_id = event.store_id
-        self._state.address = event.address
-        self._state.port = event.port
-        self._state.scheme = event.scheme
+        logger.info("store id {}".format(info.store_id))
+        logger.info("token_secret_id {}".format(info.token_secret_id))
+        logger.info("token {}".format(info.token))
+        logger.info("address {}".format(info.address))
+        logger.info("port {}".format(info.port))
+        logger.info("scheme {}".format(info.scheme))
 
-        if event.token_secret_id:
-            secret = self.model.get_secret(id=event.token_secret_id)
-            content = secret.get_content()
-            logger.info("secret content {}".format(content))
-            self._state.token_secret_id = event.token_secret_id
-        if event.token:
-            self._state.token = event.token
+        self._on_update_status(event)
 
 
 if __name__ == "__main__":  # pragma: nocover

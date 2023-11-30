@@ -30,6 +30,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
+from charms.openfga_k8s.v0.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.traefik_k8s.v1.ingress import (
     IngressPerAppReadyEvent,
@@ -51,7 +52,7 @@ from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
-from ops.pebble import Error, ExecError, Layer
+from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
     DATABASE_NAME,
@@ -61,6 +62,7 @@ from constants import (
     LOG_FILE,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
+    OPENFGA_RELATION_NAME,
     OPENFGA_SERVER_GRPC_PORT,
     OPENFGA_SERVER_HTTP_PORT,
     PEER_KEY_DB_MIGRATE_VERSION,
@@ -86,6 +88,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self._container = self.unit.get_container(WORKLOAD_CONTAINER)
         self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container)
+        self.openfga_relation = OpenFGAProvider(self, relation_name=OPENFGA_RELATION_NAME)
 
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -121,7 +124,9 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # OpenFGA relation
-        self.framework.observe(self.on.openfga_relation_changed, self._on_openfga_relation_changed)
+        self.framework.observe(
+            self.openfga_relation.on.openfga_store_requested, self._on_openfga_store_requested
+        )
 
         # Ingress relation
         self.ingress = IngressPerAppRequirer(
@@ -335,7 +340,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 openfga_relation.data[self.app].update(
                     {
                         "address": self._get_address(openfga_relation),
-                        "dns-name": self._domain_name,
+                        "dns_name": self._domain_name,
                     }
                 )
 
@@ -345,7 +350,14 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
-        self._container.restart(SERVICE_NAME)
+        try:
+            self._container.restart(SERVICE_NAME)
+        except ChangeError as err:
+            logger.error(str(err))
+            self.unit.status = BlockedStatus(
+                "Failed to restart the container, please consult the logs"
+            )
+            return
         self.unit.status = ActiveStatus()
 
     def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -460,13 +472,13 @@ class OpenFGAOperatorCharm(CharmBase):
         return True
 
     @requires_state_setter
-    def _on_openfga_relation_changed(self, event: RelationChangedEvent) -> None:
+    def _on_openfga_store_requested(self, event: OpenFGAStoreRequestEvent) -> None:
         """Open FGA relation changed."""
         # the requires side will put the store_name in its
         # application bucket
-        if not event.app:
+        if not event.relation.app:
             return
-        store_name = event.relation.data[event.app].get("store_name", "")
+        store_name = event.store_name
         if not store_name:
             return
 
@@ -487,23 +499,26 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # update the relation data with information needed
         # to connect to OpenFga
-        data = {
-            "store_id": store_id,
-            "address": self._get_address(event.relation),
-            "scheme": "http",
-            "port": str(OPENFGA_SERVER_HTTP_PORT),
-            "dns_name": self._domain_name,
-        }
-
         if JujuVersion.from_environ().has_secrets:
             secret = self.model.get_secret(id=self._state.token_secret_id)
             secret.grant(event.relation)
 
-            data["token_secret_id"] = self._state.token_secret_id
+            token_secret_id = self._state.token_secret_id
+            token = None
         else:
-            data["token"] = self._state.token
+            token_secret_id = None
+            token = self._state.token
 
-        event.relation.data[self.app].update(data)
+        self.openfga_relation.update_relation_info(
+            store_id=store_id,
+            address=self._get_address(event.relation),
+            scheme="http",
+            port=str(OPENFGA_SERVER_HTTP_PORT),
+            dns_name=self._domain_name,
+            token=token,
+            token_secret_id=token_secret_id,
+            relation_id=event.relation.id,
+        )
 
     def _get_address(self, relation: Relation) -> str:
         """Returns the ip address to be used with the specified relation."""
@@ -575,9 +590,21 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent) -> None:
         self._update_workload(event)
+        self.openfga_relation.update_server_info(
+            address=self._get_address(event.relation),
+            scheme="http",
+            port=str(OPENFGA_SERVER_HTTP_PORT),
+            dns_name=self._domain_name,
+        )
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
         self._update_workload(event)
+        self.openfga_relation.update_server_info(
+            address=self._get_address(event.relation),
+            scheme="http",
+            port=str(OPENFGA_SERVER_HTTP_PORT),
+            dns_name=self._domain_name,
+        )
 
 
 def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:
