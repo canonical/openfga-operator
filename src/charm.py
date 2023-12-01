@@ -200,7 +200,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _get_database_relation_info(self) -> Optional[Dict]:
         """Get database info from relation data bag."""
-        if not self.database.relations:
+        if not self.database.is_resource_created():
             return None
 
         relation_id = self.database.relations[0].id
@@ -328,7 +328,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Missing required relation with postgresql")
             return
 
-        if not self.database.is_resource_created():
+        if not self._dsn:
             self.unit.status = WaitingStatus("Waiting for database creation")
             return
 

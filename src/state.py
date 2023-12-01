@@ -18,9 +18,12 @@ def requires_state_setter(func: Callable) -> Callable:
 
     @functools.wraps(func)
     def wrapper(self: "OpenFGAOperatorCharm", event: EventBase) -> Any:
-        if self.unit.is_leader() and self._state.is_ready():
+        if not self.unit.is_leader():
+            return
+        elif self._state.is_ready():
             return func(self, event)
         else:
+            event.defer()
             return
 
     return wrapper
