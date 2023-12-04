@@ -1,5 +1,7 @@
 # Charmed OpenFGA Operator
 
+[![CharmHub Badge](https://charmhub.io/openfga-k8s/badge.svg)](https://charmhub.io/openfga-k8s)
+
 ## Description
 
 This repository contains a [Juju Charm](https://charmhub.io/openfga-k8s) for deploying [OpenFGA](https://openfga.dev/) on Kubernetes.
