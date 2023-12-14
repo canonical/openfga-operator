@@ -287,16 +287,15 @@ class OpenFGAOperatorCharm(CharmBase):
     def _create_token(self) -> None:
         if not self.unit.is_leader():
             return
-        token = secrets.token_urlsafe(32)
         if JujuVersion.from_environ().has_secrets:
             if not self._state.token_secret_id:
-                content = {"token": token}
+                content = {"token": secrets.token_urlsafe(32)}
                 secret = self.app.add_secret(content)
                 self._state.token_secret_id = secret.id
                 logger.info("created token secret {}".format(secret.id))
         else:
             if not self._state.token:
-                self._state.token = token
+                self._state.token = secrets.token_urlsafe(32)
 
     def _get_token(self) -> Optional[str]:
         if JujuVersion.from_environ().has_secrets:
