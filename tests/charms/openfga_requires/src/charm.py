@@ -15,7 +15,7 @@ develop a new k8s charm using the Operator Framework:
 import logging
 from typing import Any
 
-from charms.openfga_k8s.v0.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
+from charms.openfga_k8s.v1.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
 from ops import EventBase
 from ops.charm import CharmBase
 from ops.main import main
@@ -54,6 +54,7 @@ class OpenfgaRequiresCharm(CharmBase):
     def _on_update_status(self, event: EventBase) -> None:
         info = self.openfga.get_store_info()
         if not info:
+            self.unit.status = WaitingStatus("waiting for store information")
             event.defer()
             return
 
@@ -79,11 +80,9 @@ class OpenfgaRequiresCharm(CharmBase):
             return
 
         logger.info("store id {}".format(info.store_id))
-        logger.info("token_secret_id {}".format(info.token_secret_id))
         logger.info("token {}".format(info.token))
-        logger.info("address {}".format(info.address))
-        logger.info("port {}".format(info.port))
-        logger.info("scheme {}".format(info.scheme))
+        logger.info("grpc_api_url {}".format(info.grpc_api_url))
+        logger.info("http_api_url {}".format(info.http_api_url))
 
         self._on_update_status(event)
 

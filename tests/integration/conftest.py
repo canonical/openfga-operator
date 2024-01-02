@@ -27,6 +27,6 @@ async def test_charm(ops_test: OpsTest) -> Path:
 @pytest.fixture(scope="module", autouse=True)
 def copy_libraries_into_tester_charm(ops_test: OpsTest) -> None:
     """Ensure that the tester charm uses the current libraries."""
-    lib = Path("lib/charms/openfga_k8s/v0/openfga.py")
+    lib = Path("lib/charms/openfga_k8s/v1/openfga.py")
     Path("tests/integration/openfga_requires", lib.parent).mkdir(parents=True, exist_ok=True)
     shutil.copyfile(lib.as_posix(), "tests/charms/openfga_requires/{}".format(lib.as_posix()))

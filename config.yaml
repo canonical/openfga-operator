@@ -1,7 +1,7 @@
 options:
   log-level:
     description: |
-      Configures the log level of gunicorn. 
+      Configures the log level of gunicorn.
 
       Acceptable values are: "info", "debug", "warning", "error" and "critical"
     default: "info"

@@ -17,6 +17,11 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 APP_NAME = "openfga"
 
 
+# TODO(nsklikas): Remove skip mark
+@pytest.mark.skip(
+    reason="charm lib update is a breaking change, the requirer charm can't "
+    "integrate with previous openfga version"
+)
 @pytest.mark.abort_on_fail
 async def test_upgrade_running_application(ops_test: OpsTest, charm: str, test_charm: str) -> None:
     """Deploy latest published charm and upgrade it with charm-under-test.

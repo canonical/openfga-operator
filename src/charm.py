@@ -19,7 +19,6 @@
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any, Dict, Optional
-from urllib.parse import urlparse
 
 import requests
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -30,9 +29,9 @@ from charms.data_platform_libs.v0.data_interfaces import (
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
-from charms.openfga_k8s.v0.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
+from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from charms.traefik_k8s.v1.ingress import (
+from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
     IngressPerAppRevokedEvent,
@@ -58,7 +57,8 @@ from constants import (
     DATABASE_NAME,
     DATABASE_RELATION_NAME,
     GRAFANA_RELATION_NAME,
-    INGRESS_RELATION_NAME,
+    GRPC_INGRESS_RELATION_NAME,
+    HTTP_INGRESS_RELATION_NAME,
     LOG_FILE,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
@@ -128,12 +128,26 @@ class OpenFGAOperatorCharm(CharmBase):
             self.openfga_relation.on.openfga_store_requested, self._on_openfga_store_requested
         )
 
-        # Ingress relation
-        self.ingress = IngressPerAppRequirer(
-            self, relation_name=INGRESS_RELATION_NAME, port=OPENFGA_SERVER_HTTP_PORT
+        # Ingress HTTP relation
+        self.http_ingress = IngressPerAppRequirer(
+            self,
+            relation_name=HTTP_INGRESS_RELATION_NAME,
+            port=OPENFGA_SERVER_HTTP_PORT,
+            strip_prefix=True,
         )
-        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
-        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
+        self.framework.observe(self.http_ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.http_ingress.on.revoked, self._on_ingress_revoked)
+
+        # Ingress GRPC relation
+        self.grpc_ingress = IngressPerAppRequirer(
+            self,
+            relation_name=GRPC_INGRESS_RELATION_NAME,
+            port=OPENFGA_SERVER_GRPC_PORT,
+            strip_prefix=True,
+            scheme="h2c",
+        )
+        self.framework.observe(self.grpc_ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.grpc_ingress.on.revoked, self._on_ingress_revoked)
 
         # Database relation
         self.database = DatabaseRequires(
@@ -184,21 +198,9 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    @property
-    def _domain_name(self) -> str:
-        if url := self.ingress.url:
-            # Remove scheme part from url
-            parsed = urlparse(url)
-            dns_name = parsed.netloc + parsed.path
-        else:
-            dns_name = "{}.{}-endpoints.{}.svc.cluster.local".format(
-                self.unit.name.replace("/", "-"), self.app.name, self.model.name
-            )
-        return dns_name
-
     def _get_database_relation_info(self) -> Optional[Dict]:
         """Get database info from relation data bag."""
-        if not self.database.relations:
+        if not self.database.is_resource_created():
             return None
 
         relation_id = self.database.relations[0].id
@@ -209,6 +211,10 @@ class OpenFGAOperatorCharm(CharmBase):
             "endpoints": relation_data.get("endpoints"),
             "database_name": DATABASE_NAME,
         }
+
+    @property
+    def _log_level(self) -> str:
+        return self.config["log-level"]
 
     @property
     def _dsn(self) -> Optional[str]:
@@ -256,7 +262,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": f"sh -c 'openfga run 2>&1 | tee -a {LOG_FILE}'",
+                    "command": f"sh -c 'openfga run --log-format json --log-level {self._log_level} 2>&1 | tee -a {LOG_FILE}'",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -281,16 +287,15 @@ class OpenFGAOperatorCharm(CharmBase):
     def _create_token(self) -> None:
         if not self.unit.is_leader():
             return
-        token = secrets.token_urlsafe(32)
         if JujuVersion.from_environ().has_secrets:
             if not self._state.token_secret_id:
-                content = {"token": token}
+                content = {"token": secrets.token_urlsafe(32)}
                 secret = self.app.add_secret(content)
                 self._state.token_secret_id = secret.id
                 logger.info("created token secret {}".format(secret.id))
         else:
             if not self._state.token:
-                self._state.token = token
+                self._state.token = secrets.token_urlsafe(32)
 
     def _get_token(self) -> Optional[str]:
         if JujuVersion.from_environ().has_secrets:
@@ -322,7 +327,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Missing required relation with postgresql")
             return
 
-        if not self.database.is_resource_created():
+        if not self._dsn:
             self.unit.status = WaitingStatus("Waiting for database creation")
             return
 
@@ -332,17 +337,8 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
 
-        # if openfga relation exists, make sure the address is
-        # updated
-        if self.unit.is_leader():
-            openfga_relation = self.model.get_relation("openfga")
-            if openfga_relation and self.app in openfga_relation.data:
-                openfga_relation.data[self.app].update(
-                    {
-                        "address": self._get_address(openfga_relation),
-                        "dns_name": self._domain_name,
-                    }
-                )
+        # if openfga relation exists, make sure the address is updated
+        self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
 
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
@@ -511,10 +507,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.openfga_relation.update_relation_info(
             store_id=store_id,
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
+            http_api_url=self.http_ingress.url,
             token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
@@ -590,21 +583,9 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent) -> None:
         self._update_workload(event)
-        self.openfga_relation.update_server_info(
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
-        )
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
         self._update_workload(event)
-        self.openfga_relation.update_server_info(
-            address=self._get_address(event.relation),
-            scheme="http",
-            port=str(OPENFGA_SERVER_HTTP_PORT),
-            dns_name=self._domain_name,
-        )
 
 
 def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:
