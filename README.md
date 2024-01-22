@@ -26,7 +26,7 @@ juju run openfga-k8s/leader schema-upgrade --wait 30s
 
 #### New `openfga` interface:
 
-Current charm provides a library for the `openfga` relation intefave. Your
+Current charm provides a library for the `openfga` relation interface. Your
 application should define an interface in `metadata.yaml`:
 
 ```yaml

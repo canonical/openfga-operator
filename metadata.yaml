@@ -51,8 +51,3 @@ resources:
     type: oci-image
     description: OCI image for OpenFGA
     upstream-source: ghcr.io/canonical/openfga:1.3.9
-  # Temporary workaround until pebble can forward logs to Loki directly.
-  promtail-bin:
-    type: file
-    description: Promtail binary for logging
-    filename: promtail-linux
