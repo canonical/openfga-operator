@@ -11,7 +11,7 @@ from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
 
-LOG_FILE = "/var/log/openfga-k8s"
+LOG_FILE = "/openfga-k8s.log"
 DB_USERNAME = "test-username"
 DB_PASSWORD = "test-password"
 DB_ENDPOINT = "postgresql-k8s-primary.namespace.svc.cluster.local:5432"

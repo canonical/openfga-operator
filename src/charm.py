@@ -62,13 +62,14 @@ from constants import (
     LOG_FILE,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
+    OPENFGA_METRICS_HTTP_PORT,
     OPENFGA_RELATION_NAME,
     OPENFGA_SERVER_GRPC_PORT,
     OPENFGA_SERVER_HTTP_PORT,
     PEER_KEY_DB_MIGRATE_VERSION,
     REQUIRED_SETTINGS,
     SERVICE_NAME,
-    WORKLOAD_CONTAINER, OPENFGA_METRICS_HTTP_PORT,
+    WORKLOAD_CONTAINER,
 )
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
@@ -111,7 +112,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self,
             log_files=[LOG_FILE],
             relation_name=LOG_PROXY_RELATION_NAME,
-            container_name=WORKLOAD_CONTAINER
+            container_name=WORKLOAD_CONTAINER,
         )
 
         # Prometheus metrics endpoint relation
@@ -120,11 +121,7 @@ class OpenFGAOperatorCharm(CharmBase):
             jobs=[
                 {
                     "metrics_path": "/metrics",
-                    "static_configs": [
-                        {
-                            "targets": [f"*:{OPENFGA_METRICS_HTTP_PORT}"]
-                        }
-                    ]
+                    "static_configs": [{"targets": [f"*:{OPENFGA_METRICS_HTTP_PORT}"]}],
                 }
             ],
             refresh_event=self.on.config_changed,
@@ -169,7 +166,9 @@ class OpenFGAOperatorCharm(CharmBase):
             self._on_database_changed,
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
-        self.framework.observe(self.log_proxy.on.promtail_digest_error, self._on_promtail_digest_error)
+        self.framework.observe(
+            self.log_proxy.on.promtail_digest_error, self._on_promtail_digest_error
+        )
 
         port_http = ServicePort(
             OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
@@ -225,7 +224,7 @@ class OpenFGAOperatorCharm(CharmBase):
         }
 
     def _on_promtail_digest_error(self, event: PromtailDigestError) -> None:
-        """ Log PromtailDigestError error """
+        """Log PromtailDigestError error."""
         logger.error(f'got PromtailDigestError with message: "{event.message}"')
 
     @property
