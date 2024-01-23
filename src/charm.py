@@ -27,7 +27,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseRequires,
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
-from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
+from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer, PromtailDigestError
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
@@ -62,6 +62,7 @@ from constants import (
     LOG_FILE,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
+    OPENFGA_METRICS_HTTP_PORT,
     OPENFGA_RELATION_NAME,
     OPENFGA_SERVER_GRPC_PORT,
     OPENFGA_SERVER_HTTP_PORT,
@@ -111,14 +112,18 @@ class OpenFGAOperatorCharm(CharmBase):
             self,
             log_files=[LOG_FILE],
             relation_name=LOG_PROXY_RELATION_NAME,
-            promtail_resource_name="promtail-bin",
             container_name=WORKLOAD_CONTAINER,
         )
 
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{"targets": [f"*:{OPENFGA_SERVER_HTTP_PORT}"]}]}],
+            jobs=[
+                {
+                    "metrics_path": "/metrics",
+                    "static_configs": [{"targets": [f"*:{OPENFGA_METRICS_HTTP_PORT}"]}],
+                }
+            ],
             refresh_event=self.on.config_changed,
             relation_name=METRIC_RELATION_NAME,
         )
@@ -161,6 +166,9 @@ class OpenFGAOperatorCharm(CharmBase):
             self._on_database_changed,
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
+        self.framework.observe(
+            self.log_proxy.on.promtail_digest_error, self._on_promtail_digest_error
+        )
 
         port_http = ServicePort(
             OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
@@ -168,7 +176,10 @@ class OpenFGAOperatorCharm(CharmBase):
         port_grpc = ServicePort(
             OPENFGA_SERVER_GRPC_PORT, name=f"{self.app.name}-grpc", protocol="TCP"
         )
-        self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc])
+        port_metrics = ServicePort(
+            OPENFGA_METRICS_HTTP_PORT, name=f"{self.app.name}-metrics", protocol="TCP"
+        )
+        self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc, port_metrics])
 
     def _on_openfga_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Workload pebble ready."""
@@ -211,6 +222,10 @@ class OpenFGAOperatorCharm(CharmBase):
             "endpoints": relation_data.get("endpoints"),
             "database_name": DATABASE_NAME,
         }
+
+    def _on_promtail_digest_error(self, event: PromtailDigestError) -> None:
+        """Log PromtailDigestError error."""
+        logger.error(f'got PromtailDigestError with message: "{event.message}"')
 
     @property
     def _log_level(self) -> str:

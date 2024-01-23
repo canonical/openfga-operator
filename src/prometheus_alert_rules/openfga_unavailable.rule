@@ -1,0 +1,17 @@
+groups:
+- name: OpenFGAUnavailable
+  rules:
+  - alert: OpenFGAUnavailable-multiple
+    expr: sum(up) / count(up) < 0.7
+    for: 1m
+    labels:
+      severity: error
+    annotations:
+      summary: "30% of units of {{ $labels.juju_application }} in model {{ $labels.juju_model }} are down"
+  - alert: OpenFGAUnavailable-all
+    expr: sum(up) == 0
+    for: 1m
+    labels:
+      severity: fatal
+    annotations:
+      summary: "All units of {{ $labels.juju_application }} in model {{ $labels.juju_model }} are down"

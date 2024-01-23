@@ -26,7 +26,7 @@ juju run openfga-k8s/leader schema-upgrade --wait 30s
 
 #### New `openfga` interface:
 
-Current charm provides a library for the `openfga` relation intefave. Your
+Current charm provides a library for the `openfga` relation interface. Your
 application should define an interface in `metadata.yaml`:
 
 ```yaml
@@ -72,6 +72,16 @@ juju remove-relation openfga-k8s tls-certificates-operator
 ```
 
 Note: The TLS settings shown here are for self-signed-certificates, which are not recommended for production clusters. The TLS Certificates Operator offers a variety of configurations. Read more on the TLS Certificates Operator [here](https://charmhub.io/tls-certificates-operator).
+
+## Observability
+This OpenFGA operator integrates with [Canonical Observability Stack](https://charmhub.io/topics/canonical-observability-stack) (COS) bundle.
+It comes with a Grafana dashboard and Loki and Prometheus alert rules for basic common scenarios.
+To integrate with the COS bundle, after you [deploy it](https://charmhub.io/topics/canonical-observability-stack/tutorials/install-microk8s#heading--deploy-the-cos-lite-bundle), you can run:
+```bash
+juju integrate openfga:grafana-dashboard grafana:grafana-dashboard
+juju integrate openfga:metrics-endpoint prometheus:metrics-endpoint
+juju integrate loki:logging openfga:log-proxy
+```
 
 ## Security
 Security issues in the Charmed OpenFGA k8s Operator can be reported through [LaunchPad](https://wiki.ubuntu.com/DebuggingSecurity#How%20to%20File). Please do not file GitHub issues about security issues.

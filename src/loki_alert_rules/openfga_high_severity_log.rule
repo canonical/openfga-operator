@@ -1,0 +1,9 @@
+groups:
+- name: OpenFGAHighSeverityLog
+  rules:
+  - alert: HighFrequencyHighSeverityLog
+    expr: sum by(level) (count_over_time({%%juju_topology%%} | json | __error__ != "JSONParserErr" | level =~ `error|fatal|critical` [5m])) > 100
+    labels:
+      severity: error
+    annotations:
+      summary: "Logs with level error or above found in application {{ $labels.juju_application }} of Juju charm {{ $labels.juju_charm }} in model {{ $labels.juju_model }}. Frequency of logs is high."
