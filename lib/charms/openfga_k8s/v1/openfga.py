@@ -87,7 +87,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 0
+LIBPATCH = 1
 PYDEPS = ["pydantic<2.0"]
 
 logger = logging.getLogger(__name__)
@@ -236,11 +236,17 @@ class OpenFGARequires(Object):
 
     def _on_relation_created(self, event: RelationCreatedEvent) -> None:
         """Handle the relation-created event."""
+        if not self.model.unit.is_leader():
+            return
+
         databag = event.relation.data[self.model.app]
         OpenfgaRequirerAppData(store_name=self.store_name).dump(databag)
 
     def _on_relation_changed(self, event: RelationChangedEvent) -> None:
         """Handle the relation-changed event."""
+        if not self.model.unit.is_leader():
+            return
+
         if not (app := event.relation.app):
             return
         databag = event.relation.data[app]
