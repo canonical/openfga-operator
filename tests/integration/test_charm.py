@@ -46,6 +46,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             test_charm,
             application_name="openfga-requires",
             series="jammy",
+            num_units=2,
         ),
     )
 
@@ -93,18 +94,6 @@ async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
 
     openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
-
-    app = ops_test.model.applications["openfga-requires"]
-
-    await app.scale(2)
-
-    await ops_test.model.wait_for_idle(
-        apps=["openfga-requires"],
-        status="active",
-        raise_on_blocked=True,
-        timeout=1000,
-        wait_for_exact_units=2,
-    )
 
 
 async def test_has_http_ingress(ops_test: OpsTest) -> None:

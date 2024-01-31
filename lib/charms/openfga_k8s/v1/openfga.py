@@ -244,9 +244,6 @@ class OpenFGARequires(Object):
 
     def _on_relation_changed(self, event: RelationChangedEvent) -> None:
         """Handle the relation-changed event."""
-        if not self.model.unit.is_leader():
-            return
-
         if not (app := event.relation.app):
             return
         databag = event.relation.data[app]
