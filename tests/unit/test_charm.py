@@ -84,7 +84,21 @@ def test_on_config_changed(
                     "OPENFGA_PLAYGROUND_ENABLED": "false",
                 },
             },
-        }
+        },
+        "checks": {
+            "openfga-http-check": {
+                "override": "replace",
+                "period": "1m",
+                "http": {"url": "http://localhost:8080/healthz"},
+            },
+            "openfga-grpc-check": {
+                "override": "replace",
+                "period": "1m",
+                "exec": {
+                    "command": "grpc_health_probe -addr localhost:8081",
+                },
+            },
+        },
     }
 
 
