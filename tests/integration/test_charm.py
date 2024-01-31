@@ -46,6 +46,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             test_charm,
             application_name="openfga-requires",
             series="jammy",
+            num_units=2,
         ),
     )
 

@@ -21,7 +21,6 @@ To deploy a single unit of OpenFGA using its default configuration.
 juju deploy openfga-k8s --channel edge
 juju deploy postgresql-k8s --channel edge
 juju integrate postgresql-k8s:database openfga-k8s
-juju run openfga-k8s/leader schema-upgrade --wait 30s
 ```
 
 #### New `openfga` interface:
@@ -37,7 +36,7 @@ requires:
 
 Then run
 ```shell
-charmcraft fetch-lib charms.openfga_k8s.v0.openfga
+charmcraft fetch-lib charms.openfga_k8s.v1.openfga
 ```
 
 Please read usage documentation about
