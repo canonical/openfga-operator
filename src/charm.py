@@ -59,7 +59,8 @@ from constants import (
     GRAFANA_RELATION_NAME,
     GRPC_INGRESS_RELATION_NAME,
     HTTP_INGRESS_RELATION_NAME,
-    LOG_FILE,
+    LOG_FILE_PATH,
+    LOG_FOLDER,
     LOG_PROXY_RELATION_NAME,
     METRIC_RELATION_NAME,
     OPENFGA_METRICS_HTTP_PORT,
@@ -110,7 +111,7 @@ class OpenFGAOperatorCharm(CharmBase):
         # Loki log-proxy relation
         self.log_proxy = LogProxyConsumer(
             self,
-            log_files=[LOG_FILE],
+            log_files=[LOG_FILE_PATH],
             relation_name=LOG_PROXY_RELATION_NAME,
             container_name=WORKLOAD_CONTAINER,
         )
@@ -277,7 +278,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": f"sh -c 'openfga run --log-format json --log-level {self._log_level} 2>&1 | tee -a {LOG_FILE}'",
+                    "command": f"sh -c 'openfga run --log-format json --log-level {self._log_level} 2>&1 | tee -a {LOG_FILE_PATH}'",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -354,6 +355,10 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # if openfga relation exists, make sure the address is updated
         self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
+
+        if not self._container.isdir(LOG_FOLDER):
+            self._container.make_dir(path=LOG_FOLDER, make_parents=True)
+            logger.info(f"Created directory {LOG_FOLDER}")
 
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
