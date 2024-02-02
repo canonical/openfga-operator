@@ -11,7 +11,7 @@ from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
 
-LOG_FILE = "/openfga-k8s.log"
+LOG_FILE_PATH = "/var/log/openfga/openfga-k8s.log"
 DB_USERNAME = "test-username"
 DB_PASSWORD = "test-password"
 DB_ENDPOINT = "postgresql-k8s-primary.namespace.svc.cluster.local:5432"
@@ -74,7 +74,7 @@ def test_on_config_changed(
                 "override": "merge",
                 "startup": "disabled",
                 "summary": "OpenFGA",
-                "command": f"sh -c 'openfga run --log-format json --log-level debug 2>&1 | tee -a {LOG_FILE}'",
+                "command": f"sh -c 'openfga run --log-format json --log-level debug 2>&1 | tee -a {LOG_FILE_PATH}'",
                 "environment": {
                     "OPENFGA_AUTHN_METHOD": "preshared",
                     "OPENFGA_AUTHN_PRESHARED_KEYS": mocked_token_urlsafe.return_value,

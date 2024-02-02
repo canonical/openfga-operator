@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 """Constants."""
+import os
 
 WORKLOAD_CONTAINER = "openfga"
 SERVICE_NAME = "openfga"
@@ -11,7 +12,8 @@ REQUIRED_SETTINGS = [
     "OPENFGA_AUTHN_PRESHARED_KEYS",
 ]
 
-LOG_FILE = "/openfga-k8s.log"
+LOG_FOLDER = "/var/log/openfga"
+LOG_FILE_PATH = os.path.join(LOG_FOLDER, "openfga-k8s.log")
 
 OPENFGA_SERVER_HTTP_PORT = 8080
 OPENFGA_METRICS_HTTP_PORT = 2112
