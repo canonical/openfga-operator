@@ -445,13 +445,13 @@ class OpenFGAOperatorCharm(CharmBase):
         if not self._state.is_ready():
             return False
 
-        if self._migration_is_needed():
-            self.unit.status = BlockedStatus("Please run schema-upgrade action")
-            return False
-
         if not self._container.can_connect():
             logger.debug("cannot connect to workload container")
             self.unit.status = WaitingStatus("waiting for the OpenFGA workload")
+            return False
+
+        if self._migration_is_needed():
+            self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return False
 
         plan = self._container.get_plan()
