@@ -404,12 +404,12 @@ class OpenFGAOperatorCharm(CharmBase):
         setattr(self._state, peer_key, self.openfga.get_version())
         self._update_workload(event)
 
-    @requires_state_setter
+    @requires_state
     def _on_database_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
         """Database event handler."""
         self._update_workload(event)
 
-    @requires_state_setter
+    @requires_state
     def _on_database_relation_broken(self, event: RelationDepartedEvent) -> None:
         """Database relation broken handler."""
         self._update_workload(event)
