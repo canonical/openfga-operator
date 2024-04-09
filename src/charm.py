@@ -257,6 +257,7 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
         env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
+        env_vars["OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS"] = "true"
 
         token = self._get_token()
         if token:
