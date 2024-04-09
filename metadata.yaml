@@ -1,6 +1,7 @@
 name: openfga-k8s
 display-name: OpenFGA
 summary: A high-performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar.
+docs: https://discourse.charmhub.io/t/openfga-k8s-docs-index/13826
 website: https://github.com/canonical/openfga-operator
 source: https://github.com/canonical/openfga-operator
 issues: https://github.com/canonical/openfga-operator/issues
