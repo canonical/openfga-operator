@@ -33,7 +33,7 @@
         "type": "prometheus",
         "uid": "${prometheusds}"
       },
-      "description": "Percentage of available Hydra units",
+      "description": "Percentage of available OpenFGA units",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -96,7 +96,7 @@
             "uid": "${prometheusds}"
           },
           "editorMode": "builder",
-          "expr": "sum(up{juju_application=~\"$juju_application\",juju_charm=\"hydra\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}) / count(up{juju_application=~\"$juju_application\",juju_charm=\"hydra\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+          "expr": "sum(up{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}) / count(up{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -328,8 +328,8 @@
             "type": "prometheus",
             "uid": "${prometheusds}"
           },
-          "editorMode": "code",
-          "expr": "sum by(endpoint, code) (rate(http_requests_total{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+          "editorMode": "code",    
+          "expr": "sum by(grpc_service, grpc_code) (rate(grpc_server_started_total{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -422,13 +422,13 @@
             "uid": "${prometheusds}"
           },
           "editorMode": "code",
-          "expr": "sum by(status_bucket) (rate(http_requests_statuses_total{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+          "expr": "sum by(grpc_code) (rate(grpc_server_handled_total{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Hydra response status codes rates",
+      "title": "OpenFGA response status codes rates",
       "type": "timeseries"
     },
     {
@@ -515,7 +515,7 @@
             "uid": "${prometheusds}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.9, sum by(le, endpoint) (rate(http_requests_duration_seconds_bucket{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m])))",
+          "expr": "histogram_quantile(0.9, sum by(le, grpc_service) (rate(grpc_server_handling_seconds_bucket{juju_application=~\"$juju_application\",juju_charm=\"openfga-k8s\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -715,7 +715,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "P6F02844201018F02"
+        "uid": "${prometheusds}"
       },
       "description": "Garbage collection duration in seconds (0.5 quantile)",
       "fieldConfig": {
@@ -794,7 +794,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "P6F02844201018F02"
+            "uid": "${prometheusds}"
           },
           "editorMode": "builder",
           "expr": "go_gc_duration_seconds{quantile=\"0.5\", juju_charm=\"openfga-k8s\"}",
@@ -810,7 +810,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "P6F02844201018F02"
+        "uid": "${prometheusds}"
       },
       "fieldConfig": {
         "defaults": {
@@ -887,7 +887,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "P6F02844201018F02"
+            "uid": "${prometheusds}"
           },
           "editorMode": "builder",
           "expr": "go_gc_duration_seconds{quantile=\"0.75\", juju_charm=\"openfga-k8s\"}",

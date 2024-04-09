@@ -83,6 +83,7 @@ def test_on_config_changed(
                     "OPENFGA_DATASTORE_URI": mocked_dsn.return_value,
                     "OPENFGA_LOG_LEVEL": "debug",
                     "OPENFGA_PLAYGROUND_ENABLED": "false",
+                    "OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS": "true",
                 },
             },
         },
