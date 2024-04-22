@@ -373,7 +373,7 @@ class OpenFGAOperatorCharm(CharmBase):
     def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
         self._update_workload(event)
 
-    @requires_state_setter
+    @requires_state
     def _on_database_created(self, event: DatabaseCreatedEvent) -> None:
         """Database event handler."""
         if not self._container.can_connect():
@@ -384,6 +384,12 @@ class OpenFGAOperatorCharm(CharmBase):
 
         if not self._migration_is_needed():
             self._update_workload(event)
+            return
+
+        if not self.unit.is_leader():
+            logger.info("Unit does not have leadership")
+            self.unit.status = WaitingStatus("Unit waiting for leadership to run the migration")
+            event.defer()
             return
 
         if not self._run_sql_migration():
