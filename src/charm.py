@@ -340,6 +340,11 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token()
+
+        if not self._container.isdir(LOG_FOLDER):
+            self._container.make_dir(path=LOG_FOLDER, make_parents=True)
+            logger.info(f"Created directory {LOG_FOLDER}")
+
         if not self.model.relations[DATABASE_RELATION_NAME]:
             self.unit.status = BlockedStatus("Missing required relation with postgresql")
             return
@@ -353,13 +358,6 @@ class OpenFGAOperatorCharm(CharmBase):
             logger.info("waiting for schema upgrade")
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
-
-        # if openfga relation exists, make sure the address is updated
-        self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
-
-        if not self._container.isdir(LOG_FOLDER):
-            self._container.make_dir(path=LOG_FOLDER, make_parents=True)
-            logger.info(f"Created directory {LOG_FOLDER}")
 
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
@@ -375,6 +373,9 @@ class OpenFGAOperatorCharm(CharmBase):
                 "Failed to restart the container, please consult the logs"
             )
             return
+
+        # if openfga relation exists, make sure the address is updated
+        self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
         self.unit.status = ActiveStatus()
 
     def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -464,7 +465,7 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars = service.environment
         for setting in REQUIRED_SETTINGS:
             if not env_vars.get(setting, ""):
-                self.unit.status = BlockedStatus(
+                self.unit.status = WaitingStatus(
                     "{} configuration value not set".format(setting),
                 )
                 return False
