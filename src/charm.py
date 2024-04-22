@@ -264,14 +264,6 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
 
-        env_vars = {key: value for key, value in env_vars.items() if value}
-        for setting in REQUIRED_SETTINGS:
-            if not env_vars.get(setting, ""):
-                self.unit.status = BlockedStatus(
-                    "{} configuration value not set".format(setting),
-                )
-                return Layer()
-
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
             "description": "pebble layer for openfga",
