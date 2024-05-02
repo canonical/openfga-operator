@@ -8,7 +8,7 @@ import logging
 from unittest.mock import MagicMock
 
 from ops.model import WaitingStatus
-from ops.testing import ExecResult, Harness
+from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ def test_on_config_changed(
     mocked_token_urlsafe: MagicMock,
     mocked_dsn: MagicMock,
     mocked_migration_is_needed: MagicMock,
+    mocked_workload_version: int,
 ) -> None:
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
@@ -110,6 +111,7 @@ def test_on_openfga_relation_joined(
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
+    mocked_workload_version: int,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -142,6 +144,7 @@ def test_on_openfga_relation_joined_with_ingress(
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
+    mocked_workload_version: int,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -177,6 +180,7 @@ def test_on_openfga_relation_joined_with_secrets(
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
+    mocked_workload_version: int,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -209,15 +213,8 @@ def test_update_status_with_container_cannot_connect(
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
+    mocked_workload_version: int,
 ) -> None:
-    harness.handle_exec(
-        "openfga",
-        ["openfga", "version"],
-        result=ExecResult(
-            stdout=b"",
-            stderr=b"OpenFGA version `1.0.0` build from `abcd1234` on `2024-04-01 12:34:56`",
-        ),
-    )
     ip = "10.0.0.1"
     harness.add_network(ip)
     harness.container_pebble_ready("openfga")
@@ -227,3 +224,16 @@ def test_update_status_with_container_cannot_connect(
     harness.set_can_connect(container="openfga", val=False)
     harness.charm.on.update_status.emit()
     assert harness.model.unit.status == WaitingStatus("waiting for the OpenFGA workload")
+
+
+def test_workload_version(
+    harness: Harness,
+    mocked_token_urlsafe: MagicMock,
+    mocked_dsn: MagicMock,
+    mocked_create_openfga_store: MagicMock,
+    mocked_juju_version: MagicMock,
+    mocked_workload_version: int,
+) -> None:
+    harness.container_pebble_ready("openfga")
+
+    assert harness.get_workload_version() == mocked_workload_version
