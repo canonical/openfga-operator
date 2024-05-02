@@ -184,6 +184,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_openfga_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Workload pebble ready."""
+        self._set_version()
         self._update_workload(event)
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
@@ -316,6 +317,10 @@ class OpenFGAOperatorCharm(CharmBase):
                 return None
         else:
             return self._state.token
+
+    def _set_version(self) -> None:
+        version = self.openfga.get_version()
+        self.unit.set_workload_version(version)
 
     @requires_state_setter
     def _on_leader_elected(self, event: LeaderElectedEvent) -> None:

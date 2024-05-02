@@ -8,7 +8,7 @@ from typing import Generator
 from unittest.mock import MagicMock, PropertyMock
 
 import pytest
-from ops.testing import Harness
+from ops.testing import ExecResult, Harness
 from pytest_mock import MockerFixture
 
 from charm import OpenFGAOperatorCharm
@@ -24,7 +24,6 @@ def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, 
     tempdir = tempfile.TemporaryDirectory()
     harness.charm.framework.charm_dir = pathlib.Path(tempdir.name)
 
-    harness.container_pebble_ready("openfga")
     yield harness
 
     harness.cleanup()
@@ -73,3 +72,17 @@ def mocked_token_urlsafe(mocker: MockerFixture) -> MagicMock:
 @pytest.fixture()
 def mocked_juju_version(mocker: MockerFixture) -> MagicMock:
     return mocker.patch.dict(os.environ, {"JUJU_VERSION": "3.2.1"})
+
+
+@pytest.fixture()
+def mocked_workload_version(harness: Harness):
+    version = "1.0.0"
+    harness.handle_exec(
+        "openfga",
+        ["openfga", "version"],
+        result=ExecResult(
+            stdout=b"",
+            stderr=f"OpenFGA version `{version}` build from `abcd1234` on `2024-04-01 12:34:56`",
+        ),
+    )
+    return version
