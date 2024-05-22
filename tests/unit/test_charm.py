@@ -1,4 +1,4 @@
-# Copyright 2022 Canonical Ltd
+# Copyright 2022 Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
@@ -56,17 +56,15 @@ def test_on_config_changed(
     mocked_token_urlsafe: MagicMock,
     mocked_dsn: MagicMock,
     mocked_migration_is_needed: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     harness.container_pebble_ready("openfga")
     setup_peer_relation(harness)
     setup_postgres_relation(harness)
 
-    harness.update_config(
-        {
-            "log-level": "debug",
-        }
-    )
+    harness.update_config({
+        "log-level": "debug",
+    })
     harness.charm.on.config_changed.emit()
 
     plan = harness.get_container_pebble_plan("openfga")
@@ -111,7 +109,7 @@ def test_on_openfga_relation_joined(
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -144,7 +142,7 @@ def test_on_openfga_relation_joined_with_ingress(
     mocked_migration_is_needed: MagicMock,
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -180,7 +178,7 @@ def test_on_openfga_relation_joined_with_secrets(
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -213,7 +211,7 @@ def test_update_status_with_container_cannot_connect(
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     ip = "10.0.0.1"
     harness.add_network(ip)
@@ -232,7 +230,7 @@ def test_workload_version(
     mocked_dsn: MagicMock,
     mocked_create_openfga_store: MagicMock,
     mocked_juju_version: MagicMock,
-    mocked_workload_version: int,
+    mocked_workload_version: str,
 ) -> None:
     harness.container_pebble_ready("openfga")
 

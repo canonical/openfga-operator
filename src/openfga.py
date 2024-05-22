@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 """Helper class for managing openfga."""
+
 import logging
 import re
 from typing import Dict, List, Optional, Tuple

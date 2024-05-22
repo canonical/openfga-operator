@@ -75,7 +75,7 @@ def mocked_juju_version(mocker: MockerFixture) -> MagicMock:
 
 
 @pytest.fixture()
-def mocked_workload_version(harness: Harness):
+def mocked_workload_version(harness: Harness) -> str:
     version = "1.0.0"
     harness.handle_exec(
         "openfga",

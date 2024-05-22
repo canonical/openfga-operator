@@ -1,3 +1,6 @@
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
+
 """# Interface Library for OpenFGA.
 
 This library wraps relation endpoints using the `openfga` interface
