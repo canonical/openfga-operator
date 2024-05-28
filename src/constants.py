@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 """Constants."""
+
 import os
 
 WORKLOAD_CONTAINER = "openfga"
