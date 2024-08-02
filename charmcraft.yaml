@@ -1,10 +1,86 @@
 # This file configures Charmcraft.
 # See https://juju.is/docs/sdk/charmcraft-config for guidance.
 
+name: openfga-k8s
 type: charm
+title: OpenFGA
+summary: A high-performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar.
+description: |
+  A high-performance and flexible authorization/permission engine
+  built for developers and inspired by Google Zanzibar.
+
+  OpenFGA is designed to make it easy for developers to model
+  their application permissions and add and integrate fine-grained
+  authorization into their applications.
+
+  It allows in-memory data storage for quick development, as well
+  as pluggable database modules. It currently supports PostgreSQL
+  and MySQL.
+
+  It offers an HTTP API and a gRPC API. It has SDKs for
+  Node.js/JavaScript, GoLang, Python and .NET. Look in our
+  Community section for third-party SDKs and tools.
+
+links:
+  documentation: https://discourse.charmhub.io/t/openfga-k8s-docs-index/13826
+  website: https://github.com/canonical/openfga-operator
+  source: https://github.com/canonical/openfga-operator
+  issues: https://github.com/canonical/openfga-operator/issues
+
+peers:
+  peer:
+    interface: openfga-peer
+
+provides:
+  openfga:
+    interface: openfga
+  grafana-dashboard:
+    interface: grafana_dashboard
+  metrics-endpoint:
+    interface: prometheus_scrape
+
+requires:
+  http-ingress:
+    interface: ingress
+    limit: 1
+  grpc-ingress:
+    interface: ingress
+    limit: 1
+  database:
+    interface: postgresql_client
+    limit: 1
+  log-proxy:
+    interface: loki_push_api
+    optional: true
+    limit: 1
+
+containers:
+  openfga:
+    resource: oci-image
+
+resources:
+  oci-image:
+    type: oci-image
+    description: OCI image for OpenFGA
+    upstream-source: ghcr.io/canonical/openfga:1.5.2
+
+config:
+  options:
+    log-level:
+      description: |
+        Configures the log level of gunicorn.
+
+        Acceptable values are: "info", "debug", "warning", "error" and "critical"
+      default: "info"
+      type: string
+
+actions:
+  schema-upgrade:
+    description: Upgrade the application database schema.
+
 parts:
   charm:
-    charm-python-packages: 
+    charm-python-packages:
       - setuptools
     charm-binary-python-packages:
       - requests >= 2.25.1
@@ -12,6 +88,7 @@ parts:
       - cryptography >= 3.4.8
       - lightkube
       - lightkube-models
+
 bases:
   - build-on:
       - name: ubuntu

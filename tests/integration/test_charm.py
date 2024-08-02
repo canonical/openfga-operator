@@ -13,7 +13,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 OPENFGA_APP = "openfga"
 TRAEFIK_CHARM = "traefik-k8s"
 TRAEFIK_GRPC_APP = "traefik-grpc"

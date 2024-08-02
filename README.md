@@ -35,7 +35,7 @@ juju integrate postgresql-k8s:database openfga-k8s
 #### `openfga` interface
 
 Current charm provides a library for the `openfga` integration interface. Your
-application should define an interface in `metadata.yaml`:
+application should define an interface in `charmcraft.yaml`:
 
 ```yaml
 requires:
