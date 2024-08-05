@@ -13,7 +13,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 OPENFGA_APP = "openfga"
 TRAEFIK_CHARM = "traefik-k8s"
 TRAEFIK_GRPC_APP = "traefik-grpc"
@@ -40,7 +40,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             charm, resources=resources, application_name=OPENFGA_APP, series="jammy", trust=True
         ),
         ops_test.model.deploy(
-            "postgresql-k8s", application_name="postgresql", channel="edge", trust=True
+            "postgresql-k8s", application_name="postgresql", channel="14/stable", trust=True
         ),
         ops_test.model.deploy(
             test_charm,
