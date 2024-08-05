@@ -3,5 +3,4 @@ requests == 2.31.0
 jsonschema==4.21.1
 cryptography >= 3.4.8
 lightkube===0.15.0
-lightkube-models==1.29.0.6
 pydantic<2.0
