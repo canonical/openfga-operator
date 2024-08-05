@@ -1,5 +1,5 @@
 ops == 2.10.0
-requests == 2.31.0
+requests ==2.32.2
 jsonschema==4.21.1
 cryptography >= 3.4.8
 lightkube===0.15.0
