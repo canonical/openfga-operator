@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 OPENFGA_APP = "openfga"
+OPENFGA_REQUIRES_APP = "openfga-requires"
 TRAEFIK_CHARM = "traefik-k8s"
 TRAEFIK_GRPC_APP = "traefik-grpc"
 TRAEFIK_HTTP_APP = "traefik-http"
+LOKI_CHARM = "loki-k8s"
+LOKI_APP = "loki"
 
 
 async def get_unit_address(ops_test: OpsTest, app_name: str, unit_num: int) -> str:
@@ -44,7 +47,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
         ),
         ops_test.model.deploy(
             test_charm,
-            application_name="openfga-requires",
+            application_name=OPENFGA_REQUIRES_APP,
             series="jammy",
             num_units=2,
         ),
@@ -84,15 +87,15 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
 async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
     assert ops_test.model.applications[OPENFGA_APP].status == "active"
 
-    await ops_test.model.integrate(OPENFGA_APP, "openfga-requires")
+    await ops_test.model.integrate(OPENFGA_APP, OPENFGA_REQUIRES_APP)
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
-            apps=["openfga-requires"],
+            apps=[OPENFGA_REQUIRES_APP],
             status="active",
             timeout=60,
         )
 
-    openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
+    openfga_requires_unit = ops_test.model.applications[OPENFGA_REQUIRES_APP].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
 
 
