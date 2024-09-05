@@ -1,4 +1,4 @@
-ops ==2.16.0
+ops ==2.16.1
 requests ==2.32.3
 jsonschema==4.23.0
 cryptography >= 3.4.8
