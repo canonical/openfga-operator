@@ -98,9 +98,9 @@ you [deploy it](https://charmhub.io/topics/canonical-observability-stack/tutoria
 you can run:
 
 ```shell
-juju integrate openfga:grafana-dashboard grafana:grafana-dashboard
-juju integrate openfga:metrics-endpoint prometheus:metrics-endpoint
-juju integrate loki:logging openfga:log-proxy
+juju integrate openfga-k8s:grafana-dashboard grafana:grafana-dashboard
+juju integrate openfga-k8s:metrics-endpoint prometheus:metrics-endpoint
+juju integrate loki:logging openfga-k8s:logging
 ```
 
 ## Security

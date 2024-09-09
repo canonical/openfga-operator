@@ -27,7 +27,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseRequires,
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
-from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer, PromtailDigestError
+from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
@@ -43,6 +43,7 @@ from ops import (
     HookEvent,
     LeaderElectedEvent,
     PebbleReadyEvent,
+    RelationEvent,
     StartEvent,
     StopEvent,
     UpdateStatusEvent,
@@ -59,9 +60,7 @@ from constants import (
     GRAFANA_RELATION_NAME,
     GRPC_INGRESS_RELATION_NAME,
     HTTP_INGRESS_RELATION_NAME,
-    LOG_FILE_PATH,
-    LOG_FOLDER,
-    LOG_PROXY_RELATION_NAME,
+    LOGGING_RELATION_NAME,
     METRIC_RELATION_NAME,
     OPENFGA_METRICS_HTTP_PORT,
     OPENFGA_RELATION_NAME,
@@ -108,12 +107,18 @@ class OpenFGAOperatorCharm(CharmBase):
             self, relation_name=GRAFANA_RELATION_NAME
         )
 
-        # Loki log-proxy relation
-        self.log_proxy = LogProxyConsumer(
-            self,
-            log_files=[LOG_FILE_PATH],
-            relation_name=LOG_PROXY_RELATION_NAME,
-            container_name=WORKLOAD_CONTAINER,
+        # Loki logging relation
+        self._log_forwarder = LogForwarder(self, relation_name=LOGGING_RELATION_NAME)
+        # Workaround for https://github.com/canonical/loki-k8s-operator/issues/403
+        # TODO: Remove when the issue is fixed
+        self.framework.observe(
+            self.on[LOGGING_RELATION_NAME].relation_created, self._push_loki_alert_rules
+        )
+        self.framework.observe(
+            self.on[LOGGING_RELATION_NAME].relation_changed, self._push_loki_alert_rules
+        )
+        self.framework.observe(
+            self.on[LOGGING_RELATION_NAME].relation_departed, self._push_loki_alert_rules
         )
 
         # Prometheus metrics endpoint relation
@@ -167,9 +172,6 @@ class OpenFGAOperatorCharm(CharmBase):
             self._on_database_changed,
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
-        self.framework.observe(
-            self.log_proxy.on.promtail_digest_error, self._on_promtail_digest_error
-        )
 
         port_http = ServicePort(
             OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
@@ -225,9 +227,8 @@ class OpenFGAOperatorCharm(CharmBase):
             "database_name": DATABASE_NAME,
         }
 
-    def _on_promtail_digest_error(self, event: PromtailDigestError) -> None:
-        """Log PromtailDigestError error."""
-        logger.error(f'got PromtailDigestError with message: "{event.message}"')
+    def _push_loki_alert_rules(self, event: RelationEvent) -> None:
+        self._log_forwarder._handle_alert_rules(event.relation)
 
     @property
     def _log_level(self) -> str:
@@ -272,7 +273,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": f"sh -c 'openfga run --log-format json --log-level {self._log_level} 2>&1 | tee -a {LOG_FILE_PATH}'",
+                    "command": f"openfga run --log-format json --log-level {self._log_level}",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -337,10 +338,6 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._create_token()
-
-        if not self._container.isdir(LOG_FOLDER):
-            self._container.make_dir(path=LOG_FOLDER, make_parents=True)
-            logger.info(f"Created directory {LOG_FOLDER}")
 
         if not self.model.relations[DATABASE_RELATION_NAME]:
             self.unit.status = BlockedStatus("Missing required relation with postgresql")

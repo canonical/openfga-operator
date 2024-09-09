@@ -2,5 +2,6 @@ ops ==2.16.1
 requests ==2.32.3
 jsonschema==4.23.0
 cryptography >= 3.4.8
-lightkube===0.15.0
+lightkube>0.15.0
 pydantic<2.0
+cosl>=0.0.26
