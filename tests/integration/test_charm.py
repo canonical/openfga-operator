@@ -46,6 +46,11 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             "postgresql-k8s", application_name="postgresql", channel="14/stable", trust=True
         ),
         ops_test.model.deploy(
+            "self-signed-certificates",
+            application_name="self-signed-certificates",
+            channel="stable",
+        ),
+        ops_test.model.deploy(
             test_charm,
             application_name=OPENFGA_REQUIRES_APP,
             series="jammy",
@@ -54,6 +59,13 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
     )
 
     logger.debug("adding postgresql relation")
+    await ops_test.model.integrate("self-signed-certificates", "postgresql")
+    await ops_test.model.wait_for_idle(
+        apps=["self-signed-certificates", "postgresql"],
+        status="active",
+        timeout=1000,
+    )
+
     await ops_test.model.integrate(OPENFGA_APP, "postgresql:database")
     await ops_test.model.wait_for_idle(
         apps=[OPENFGA_APP, "postgresql"],
