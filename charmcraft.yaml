@@ -83,10 +83,9 @@ parts:
     charm-python-packages:
       - setuptools
     charm-binary-python-packages:
-      - requests >= 2.25.1
-      - jsonschema >= 3.2.0
+      - requests ~= 2.32
+      - jsonschema ~= 4.23
       - lightkube
-      - lightkube-models
 
 bases:
   - build-on:
