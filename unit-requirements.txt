@@ -1,5 +1,6 @@
+-r requirements.txt
+charmhelpers
+coverage[toml]
 pytest
 pytest-mock
-coverage[toml]
-charmhelpers
--r requirements.txt
+requests
