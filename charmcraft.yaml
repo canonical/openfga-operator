@@ -87,10 +87,6 @@ parts:
       - jsonschema ~= 4.23
       - lightkube
 
-bases:
-  - build-on:
-      - name: ubuntu
-        channel: "22.04"
-    run-on:
-      - name: ubuntu
-        channel: "22.04"
+base: ubuntu@22.04
+platforms:
+  amd64:
