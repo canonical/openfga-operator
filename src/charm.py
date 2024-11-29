@@ -109,17 +109,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Loki logging relation
         self._log_forwarder = LogForwarder(self, relation_name=LOGGING_RELATION_NAME)
-        # Workaround for https://github.com/canonical/loki-k8s-operator/issues/403
-        # TODO: Remove when the issue is fixed
-        self.framework.observe(
-            self.on[LOGGING_RELATION_NAME].relation_created, self._push_loki_alert_rules
-        )
-        self.framework.observe(
-            self.on[LOGGING_RELATION_NAME].relation_changed, self._push_loki_alert_rules
-        )
-        self.framework.observe(
-            self.on[LOGGING_RELATION_NAME].relation_departed, self._push_loki_alert_rules
-        )
 
         # Prometheus metrics endpoint relation
         self.metrics_endpoint = MetricsEndpointProvider(
