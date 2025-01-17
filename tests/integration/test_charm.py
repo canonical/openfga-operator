@@ -64,13 +64,13 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
     await ops_test.model.deploy(
         TRAEFIK_CHARM,
         application_name=TRAEFIK_GRPC_APP,
-        channel="latest/edge",
+        channel="latest/stable",
         config={"external_hostname": "grpc"},
     )
     await ops_test.model.deploy(
         TRAEFIK_CHARM,
         application_name=TRAEFIK_HTTP_APP,
-        channel="latest/edge",
+        channel="latest/stable",
         config={"external_hostname": "http"},
     )
     await ops_test.model.wait_for_idle(
