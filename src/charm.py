@@ -43,7 +43,6 @@ from ops import (
     HookEvent,
     LeaderElectedEvent,
     PebbleReadyEvent,
-    RelationEvent,
     StartEvent,
     StopEvent,
     UpdateStatusEvent,
@@ -215,9 +214,6 @@ class OpenFGAOperatorCharm(CharmBase):
             "endpoints": relation_data.get("endpoints"),
             "database_name": DATABASE_NAME,
         }
-
-    def _push_loki_alert_rules(self, event: RelationEvent) -> None:
-        self._log_forwarder._handle_alert_rules(event.relation)
 
     @property
     def _log_level(self) -> str:
