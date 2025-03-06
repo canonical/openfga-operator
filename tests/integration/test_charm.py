@@ -3,11 +3,14 @@
 # See LICENSE file for licensing details.
 
 import asyncio
+import json
 import logging
+from typing import Optional
 
 import pytest
 import requests
 from conftest import (
+    CERTIFICATE_PROVIDER_APP,
     DB_APP,
     METADATA,
     OPENFGA_APP,
@@ -15,6 +18,8 @@ from conftest import (
     TRAEFIK_CHARM,
     TRAEFIK_GRPC_APP,
     TRAEFIK_HTTP_APP,
+    extract_certificate_common_name,
+    extract_certificate_sans,
 )
 from pytest_operator.plugin import OpsTest
 
@@ -55,6 +60,11 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             trust=True,
         ),
         ops_test.model.deploy(
+            CERTIFICATE_PROVIDER_APP,
+            channel="latest/stable",
+            trust=True,
+        ),
+        ops_test.model.deploy(
             charm,
             application_name=OPENFGA_APP,
             resources={"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]},
@@ -62,10 +72,16 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             trust=True,
         ),
     )
+    await ops_test.model.wait_for_idle(
+        apps=["postgresql"],
+        status="active",
+        timeout=10 * 60,
+    )
 
     await ops_test.model.integrate(OPENFGA_APP, f"{DB_APP}:database")
     await ops_test.model.integrate(f"{OPENFGA_APP}:grpc-ingress", TRAEFIK_GRPC_APP)
     await ops_test.model.integrate(f"{OPENFGA_APP}:http-ingress", TRAEFIK_HTTP_APP)
+    await ops_test.model.integrate(OPENFGA_APP, CERTIFICATE_PROVIDER_APP)
     await ops_test.model.wait_for_idle(
         apps=[
             DB_APP,
@@ -97,6 +113,23 @@ async def test_has_http_ingress(ops_test: OpsTest) -> None:
 
     assert resp.status_code == 401
     assert resp.json()["code"] == "bearer_token_missing"
+
+
+async def test_certification_integration(
+    ops_test: OpsTest,
+    certificate_integration_data: Optional[dict],
+    http_ingress_ip: str,
+    grpc_ingress_ip: str,
+) -> None:
+    assert certificate_integration_data
+    certificates = json.loads(certificate_integration_data["certificates"])
+    certificate = certificates[0]["certificate"]
+    assert (
+        f"CN={OPENFGA_APP}.{ops_test.model_name}.svc.cluster.local"
+        == extract_certificate_common_name(certificate)
+    )
+    assert http_ingress_ip in extract_certificate_sans(certificate)
+    assert grpc_ingress_ip in extract_certificate_sans(certificate)
 
 
 async def test_scale_up(ops_test: OpsTest) -> None:

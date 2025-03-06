@@ -3,7 +3,7 @@
 
 """Constants."""
 
-import os
+from pathlib import Path
 
 WORKLOAD_CONTAINER = "openfga"
 SERVICE_NAME = "openfga"
@@ -13,8 +13,6 @@ REQUIRED_SETTINGS = [
     "OPENFGA_AUTHN_PRESHARED_KEYS",
 ]
 
-LOG_FOLDER = "/var/log/openfga"
-LOG_FILE_PATH = os.path.join(LOG_FOLDER, "openfga-k8s.log")
 
 OPENFGA_SERVER_HTTP_PORT = 8080
 OPENFGA_METRICS_HTTP_PORT = 2112
@@ -31,3 +29,12 @@ GRAFANA_RELATION_NAME = "grafana-dashboard"
 LOGGING_RELATION_NAME = "logging"
 METRIC_RELATION_NAME = "metrics-endpoint"
 OPENFGA_RELATION_NAME = "openfga"
+CERTIFICATES_INTEGRATION_NAME = "certificates"
+
+CERTIFICATE_FILE = Path("/etc/ssl/certs/ca-certificates.crt")
+PRIVATE_KEY_DIR = Path("/etc/ssl/private")
+LOCAL_CA_CERTS_DIR = Path("/usr/local/share/ca-certificates")
+
+SERVER_CA_CERT = LOCAL_CA_CERTS_DIR / "ca.crt"
+SERVER_KEY = PRIVATE_KEY_DIR / "server.key"
+SERVER_CERT = LOCAL_CA_CERTS_DIR / "server.crt"

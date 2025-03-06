@@ -31,6 +31,7 @@ from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tls_certificates_interface.v4.tls_certificates import CertificateAvailableEvent
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
@@ -67,9 +68,13 @@ from constants import (
     OPENFGA_SERVER_HTTP_PORT,
     PEER_KEY_DB_MIGRATE_VERSION,
     REQUIRED_SETTINGS,
+    SERVER_CERT,
+    SERVER_KEY,
     SERVICE_NAME,
     WORKLOAD_CONTAINER,
 )
+from exceptions import CertificatesError
+from integrations import CertificatesIntegration
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
@@ -161,6 +166,13 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
+        # Certificates integration
+        self._certs_integration = CertificatesIntegration(self)
+        self.framework.observe(
+            self._certs_integration.cert_requirer.on.certificate_available,
+            self._on_cert_changed,
+        )
+
         port_http = ServicePort(
             OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
         )
@@ -250,6 +262,17 @@ class OpenFGAOperatorCharm(CharmBase):
         if token:
             env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
+
+        if self._certs_integration.certs_ready():
+            if self.http_ingress.is_ready():
+                env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
+                env_vars["OPENFGA_HTTP_TLS_CERT"] = SERVER_CERT
+                env_vars["OPENFGA_HTTP_TLS_KEY"] = SERVER_KEY
+
+            if self.grpc_ingress.is_ready():
+                env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
+                env_vars["OPENFGA_GRPC_TLS_CERT"] = SERVER_CERT
+                env_vars["OPENFGA_GRPC_TLS_KEY"] = SERVER_KEY
 
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
@@ -597,6 +620,21 @@ class OpenFGAOperatorCharm(CharmBase):
         self._update_workload(event)
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
+        self._update_workload(event)
+
+    def _on_cert_changed(self, event: CertificateAvailableEvent) -> None:
+        if not self._is_openfga_server_running():
+            event.defer()
+            return
+
+        try:
+            self._certs_integration.update_certificates()
+        except CertificatesError:
+            self.unit.status = BlockedStatus(
+                "Failed to update the TLS certificates, please check the logs"
+            )
+            return
+
         self._update_workload(event)
 
 
