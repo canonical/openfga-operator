@@ -1,6 +1,7 @@
 -r requirements.txt
 charmhelpers
 coverage[toml]
+cryptography
 pytest
 pytest-mock
 requests
