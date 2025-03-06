@@ -53,6 +53,10 @@ requires:
     interface: loki_push_api
     optional: true
     limit: 1
+  certificates:
+    interface: tls-certificates
+    optional: true
+    limit: 1
 
 containers:
   openfga:
@@ -84,6 +88,7 @@ parts:
       - requests ~= 2.32
       - jsonschema ~= 4.23
       - lightkube
+      - cryptography
     build-packages:
       - rustc
       - cargo

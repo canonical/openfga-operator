@@ -3,11 +3,13 @@
 # See LICENSE file for licensing details.
 
 import asyncio
+import json
 import logging
+from typing import Optional
 
 import pytest
-import requests
 from conftest import (
+    CERTIFICATE_PROVIDER_APP,
     DB_APP,
     METADATA,
     OPENFGA_APP,
@@ -15,16 +17,11 @@ from conftest import (
     TRAEFIK_CHARM,
     TRAEFIK_GRPC_APP,
     TRAEFIK_HTTP_APP,
+    extract_certificate_common_name,
 )
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
-
-
-async def get_unit_address(ops_test: OpsTest, app_name: str, unit_num: int) -> str:
-    """Get private address of a unit."""
-    status = await ops_test.model.get_status()  # noqa: F821
-    return status["applications"][app_name]["units"][f"{app_name}/{unit_num}"]["address"]
 
 
 @pytest.mark.skip_if_deployed
@@ -38,20 +35,28 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             trust=True,
         ),
         ops_test.model.deploy(
-            test_charm, application_name=OPENFGA_CLIENT_APP, series="jammy", trust=True
+            test_charm,
+            application_name=OPENFGA_CLIENT_APP,
+            series="jammy",
+            trust=True,
         ),
         ops_test.model.deploy(
             TRAEFIK_CHARM,
             application_name=TRAEFIK_GRPC_APP,
             channel="latest/stable",
-            config={"external_hostname": "grpc"},
+            config={"external_hostname": "grpc_domain"},
             trust=True,
         ),
         ops_test.model.deploy(
             TRAEFIK_CHARM,
             application_name=TRAEFIK_HTTP_APP,
             channel="latest/stable",
-            config={"external_hostname": "http"},
+            config={"external_hostname": "http_domain"},
+            trust=True,
+        ),
+        ops_test.model.deploy(
+            CERTIFICATE_PROVIDER_APP,
+            channel="latest/stable",
             trust=True,
         ),
         ops_test.model.deploy(
@@ -66,13 +71,16 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
     await ops_test.model.integrate(OPENFGA_APP, f"{DB_APP}:database")
     await ops_test.model.integrate(f"{OPENFGA_APP}:grpc-ingress", TRAEFIK_GRPC_APP)
     await ops_test.model.integrate(f"{OPENFGA_APP}:http-ingress", TRAEFIK_HTTP_APP)
+    await ops_test.model.integrate(OPENFGA_APP, CERTIFICATE_PROVIDER_APP)
     await ops_test.model.wait_for_idle(
         apps=[
+            CERTIFICATE_PROVIDER_APP,
             DB_APP,
             OPENFGA_APP,
             TRAEFIK_GRPC_APP,
             TRAEFIK_HTTP_APP,
         ],
+        raise_on_error=False,
         status="active",
         timeout=10 * 60,
     )
@@ -90,13 +98,27 @@ async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
     assert "running with store" in openfga_requires_unit.workload_status_message
 
 
-async def test_has_http_ingress(ops_test: OpsTest) -> None:
-    http_address = await get_unit_address(ops_test, TRAEFIK_HTTP_APP, 0)
+async def test_http_ingress_integration(http_ingress_netloc: Optional[str]) -> None:
+    assert http_ingress_netloc, "HTTP ingress url not found in the http-ingress integration"
+    assert http_ingress_netloc == "http_domain"
 
-    resp = requests.get(f"http://{http_address}/{ops_test.model.name}-{OPENFGA_APP}/stores")
 
-    assert resp.status_code == 401
-    assert resp.json()["code"] == "bearer_token_missing"
+async def test_grpc_ingress_integration(grpc_ingress_netloc: Optional[str]) -> None:
+    assert grpc_ingress_netloc, "GRPC ingress url not found in the grpc-ingress integration"
+    assert grpc_ingress_netloc == "grpc_domain"
+
+
+async def test_certification_integration(
+    ops_test: OpsTest,
+    certificate_integration_data: Optional[dict],
+) -> None:
+    assert certificate_integration_data
+    certificates = json.loads(certificate_integration_data["certificates"])
+    certificate = certificates[0]["certificate"]
+    assert (
+        f"CN={OPENFGA_APP}.{ops_test.model_name}.svc.cluster.local"
+        == extract_certificate_common_name(certificate)
+    )
 
 
 async def test_scale_up(ops_test: OpsTest) -> None:

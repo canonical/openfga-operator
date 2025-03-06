@@ -94,6 +94,7 @@ def test_on_config_changed(
             "openfga-grpc-check": {
                 "override": "replace",
                 "period": "1m",
+                "level": "alive",
                 "exec": {
                     "command": "grpc_health_probe -addr localhost:8081",
                 },
@@ -129,8 +130,10 @@ def test_on_openfga_relation_joined(
         mocked_token_urlsafe.return_value, "test-store-name"
     )
     relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
-    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
-    assert relation_data["http_api_url"] == f"http://{ip}:8080"
+    assert relation_data["grpc_api_url"] == "openfga-k8s.openfga-model.svc.cluster.local:8081"
+    assert (
+        relation_data["http_api_url"] == "http://openfga-k8s.openfga-model.svc.cluster.local:8080"
+    )
     assert relation_data["token"] == mocked_token_urlsafe.return_value
     assert relation_data["store_id"] == mocked_create_openfga_store.return_value
 
@@ -198,8 +201,10 @@ def test_on_openfga_relation_joined_with_secrets(
         mocked_token_urlsafe.return_value, "test-store-name"
     )
     relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
-    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
-    assert relation_data["http_api_url"] == f"http://{ip}:8080"
+    assert relation_data["grpc_api_url"] == "openfga-k8s.openfga-model.svc.cluster.local:8081"
+    assert (
+        relation_data["http_api_url"] == "http://openfga-k8s.openfga-model.svc.cluster.local:8080"
+    )
     assert relation_data["token_secret_id"].startswith("secret:")
     assert relation_data["store_id"] == mocked_create_openfga_store.return_value
 
