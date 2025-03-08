@@ -1,5 +1,5 @@
 # This file configures Charmcraft.
-# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+# See https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/# for guidance.
 
 name: openfga-k8s
 type: charm
@@ -80,12 +80,13 @@ actions:
 
 parts:
   charm:
-    charm-python-packages:
-      - setuptools
     charm-binary-python-packages:
       - requests ~= 2.32
       - jsonschema ~= 4.23
       - lightkube
+    build-packages:
+      - rustc
+      - cargo
 
 base: ubuntu@22.04
 platforms:

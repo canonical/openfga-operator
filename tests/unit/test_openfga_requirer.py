@@ -4,7 +4,7 @@
 from typing import Any, Dict, Generator, List
 
 import pytest
-from charms.openfga_k8s.v0.openfga import (
+from charms.openfga_k8s.v1.openfga import (
     OpenFGARequires,
     OpenFGAStoreCreateEvent,
     OpenFGAStoreRemovedEvent,
@@ -34,7 +34,7 @@ class OpenFGARequiresCharm(CharmBase):
         self.events.append(event)
 
 
-@pytest.fixture()
+@pytest.fixture
 def harness() -> Generator:
     harness = Harness(OpenFGARequiresCharm, meta=METADATA)
     harness.set_leader(True)
@@ -43,20 +43,19 @@ def harness() -> Generator:
     harness.cleanup()
 
 
-@pytest.fixture()
+@pytest.fixture
 def requirer_databag() -> Dict:
     return {"store_name": "test-openfga-store"}
 
 
-@pytest.fixture()
+@pytest.fixture
 def provider_databag() -> Dict:
     return {
         "store_id": "store_id",
+        "token": "token",
         "token_secret_id": "token_secret_id",
-        "address": "127.0.0.1",
-        "scheme": "http",
-        "port": "8080",
-        "dns_name": "example.domain.test.com/1234",
+        "grpc_api_url": "http://http/model-openfga",
+        "http_api_url": "http://grpc/model-openfga",
     }
 
 
@@ -109,9 +108,8 @@ def test_get_store_info_when_data_available(harness: Harness, provider_databag: 
     assert info.token == token
     assert info.store_id == provider_databag["store_id"]
     assert info.token_secret_id == provider_databag["token_secret_id"]
-    assert info.address == provider_databag["address"]
-    assert info.scheme == provider_databag["scheme"]
-    assert info.port == provider_databag["port"]
+    assert info.grpc_api_url == provider_databag["grpc_api_url"]
+    assert info.http_api_url == provider_databag["http_api_url"]
 
 
 def test_get_store_info_when_data_unavailable(harness: Harness, provider_databag: Dict) -> None:
