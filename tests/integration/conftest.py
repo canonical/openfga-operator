@@ -7,10 +7,19 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+import yaml
 from pytest_operator.plugin import OpsTest
 from utils import fetch_charm
 
 logger = logging.getLogger(__name__)
+
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
+DB_APP = "postgresql-k8s"
+OPENFGA_CLIENT_APP = "openfga-client"
+OPENFGA_APP = "openfga"
+TRAEFIK_CHARM = "traefik-k8s"
+TRAEFIK_GRPC_APP = "traefik-grpc"
+TRAEFIK_HTTP_APP = "traefik-http"
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -28,7 +37,7 @@ async def test_charm(ops_test: OpsTest) -> Path:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def copy_libraries_into_tester_charm(ops_test: OpsTest) -> None:
+def copy_libraries_into_tester_charm() -> None:
     """Ensure that the tester charm uses the current libraries."""
     lib = Path("lib/charms/openfga_k8s/v1/openfga.py")
     Path("tests/integration/openfga_requires", lib.parent).mkdir(parents=True, exist_ok=True)
