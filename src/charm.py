@@ -354,7 +354,11 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         # if openfga relation exists, make sure the address is updated
-        self.openfga_relation.update_server_info(http_api_url=self.http_ingress.url)
+        self.openfga_relation.update_server_info(
+            http_api_url=self.http_ingress.url,
+            grpc_api_url=self.grpc_ingress.url,
+        )
+
         self.unit.status = ActiveStatus()
 
     def _on_peer_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -515,6 +519,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self.openfga_relation.update_relation_info(
             store_id=store_id,
             http_api_url=self.http_ingress.url,
+            grpc_api_url=self.grpc_ingress.url,
             token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
