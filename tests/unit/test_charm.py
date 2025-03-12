@@ -40,7 +40,7 @@ def setup_ingress_relation(harness: Harness, type: str) -> int:
     harness.update_relation_data(
         relation_id,
         f"{type}-traefik",
-        {"ingress": json.dumps({"url": f"http://{type}:80/{harness.model.name}-openfga"})},
+        {"ingress": json.dumps({"url": f"http://{type}/{harness.model.name}-openfga"})},
     )
     return relation_id
 
@@ -164,8 +164,8 @@ def test_on_openfga_relation_joined_with_ingress(
         mocked_token_urlsafe.return_value, "test-store-name"
     )
     relation_data = harness.get_relation_data(rel_id, "openfga-k8s")
-    assert relation_data["grpc_api_url"] == f"http://{ip}:8081"
-    assert relation_data["http_api_url"] == "http://http:80/openfga-model-openfga"
+    assert relation_data["grpc_api_url"] == "http://grpc/openfga-model-openfga"
+    assert relation_data["http_api_url"] == "http://http/openfga-model-openfga"
     assert relation_data["token"] == mocked_token_urlsafe.return_value
     assert relation_data["store_id"] == mocked_create_openfga_store.return_value
 

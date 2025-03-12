@@ -1,11 +1,26 @@
 # This file configures Charmcraft.
-# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+# See https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/# for guidance.
 
+name: openfga-requires
 type: charm
-bases:
-  - build-on:
-      - name: ubuntu
-        channel: "20.04"
-    run-on:
-      - name: ubuntu
-        channel: "20.04"
+title: OpenFGA Test Charm
+description: |
+  A test charm to verify the OpenFGA relation.
+summary: A test charm to verify the OpenFGA relation.
+
+peers:
+  openfga-test-peer:
+    interface: openfga-test-peer
+
+requires:
+  openfga:
+    interface: openfga
+
+parts:
+  charm:
+    charm-binary-python-packages:
+      - pydantic ~= 2.0
+
+base: ubuntu@22.04
+platforms:
+  amd64:

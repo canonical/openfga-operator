@@ -16,26 +16,16 @@ import logging
 from typing import Any
 
 from charms.openfga_k8s.v1.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
-from ops import EventBase
+from ops import EventBase, main
 from ops.charm import CharmBase
-from ops.main import main
 from ops.model import ActiveStatus, WaitingStatus
 
-from state import State
-
-# Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
-
-VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
 
 class OpenfgaRequiresCharm(CharmBase):
-    """Charm the service."""
-
     def __init__(self, *args: Any) -> None:
         super().__init__(*args)
-
-        self._state = State(self.app, lambda: self.model.get_relation("openfga-test-peer"))
 
         self.framework.observe(self.on.start, self._on_update_status)
         self.framework.observe(self.on.config_changed, self._on_update_status)
@@ -46,14 +36,9 @@ class OpenfgaRequiresCharm(CharmBase):
             self.openfga.on.openfga_store_created,
             self._on_openfga_store_created,
         )
-        self.framework.observe(
-            self.openfga.on.openfga_store_created,
-            self._on_openfga_store_created,
-        )
 
     def _on_update_status(self, event: EventBase) -> None:
-        info = self.openfga.get_store_info()
-        if not info:
+        if not (info := self.openfga.get_store_info()):
             self.unit.status = WaitingStatus("waiting for store information")
             event.defer()
             return
@@ -74,8 +59,7 @@ class OpenfgaRequiresCharm(CharmBase):
         if not event.store_id:
             return
 
-        info = self.openfga.get_store_info()
-        if not info:
+        if not (info := self.openfga.get_store_info()):
             event.defer()
             return
 
