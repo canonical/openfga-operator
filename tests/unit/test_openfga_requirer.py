@@ -1,7 +1,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-from typing import Any, Dict, Generator, List
+from typing import Any, Generator
 
 import pytest
 from charms.openfga_k8s.v1.openfga import (
@@ -25,7 +25,7 @@ class OpenFGARequiresCharm(CharmBase):
     def __init__(self, *args: Any) -> None:
         super().__init__(*args)
         self.openfga = OpenFGARequires(self, "test-openfga-store")
-        self.events: List = []
+        self.events: list = []
 
         self.framework.observe(self.openfga.on.openfga_store_created, self._record_event)
         self.framework.observe(self.openfga.on.openfga_store_removed, self._record_event)
@@ -43,23 +43,7 @@ def harness() -> Generator:
     harness.cleanup()
 
 
-@pytest.fixture
-def requirer_databag() -> Dict:
-    return {"store_name": "test-openfga-store"}
-
-
-@pytest.fixture
-def provider_databag() -> Dict:
-    return {
-        "store_id": "store_id",
-        "token": "token",
-        "token_secret_id": "token_secret_id",
-        "grpc_api_url": "http://http/model-openfga",
-        "http_api_url": "http://grpc/model-openfga",
-    }
-
-
-def test_data_in_relation_bag(harness: Harness, requirer_databag: Dict) -> None:
+def test_data_in_relation_bag(harness: Harness, requirer_databag: dict) -> None:
     relation_id = harness.add_relation("openfga", "provider")
 
     relation_data = harness.get_relation_data(relation_id, harness.model.app.name)
@@ -67,7 +51,7 @@ def test_data_in_relation_bag(harness: Harness, requirer_databag: Dict) -> None:
     assert relation_data == requirer_databag
 
 
-def test_event_emitted_when_data_available(harness: Harness, provider_databag: Dict) -> None:
+def test_event_emitted_when_data_available(harness: Harness, provider_databag: dict) -> None:
     relation_id = harness.add_relation("openfga", "provider")
     harness.add_relation_unit(relation_id, "provider/0")
     harness.update_relation_data(
@@ -81,7 +65,7 @@ def test_event_emitted_when_data_available(harness: Harness, provider_databag: D
     assert events[0].store_id == provider_databag["store_id"]
 
 
-def test_event_emitted_when_data_removed(harness: Harness, provider_databag: Dict) -> None:
+def test_event_emitted_when_data_removed(harness: Harness, provider_databag: dict) -> None:
     relation_id = harness.add_relation("openfga", "provider")
     harness.add_relation_unit(relation_id, "provider/0")
     harness.remove_relation(relation_id)
@@ -90,7 +74,7 @@ def test_event_emitted_when_data_removed(harness: Harness, provider_databag: Dic
     assert len(events) == 1
 
 
-def test_get_store_info_when_data_available(harness: Harness, provider_databag: Dict) -> None:
+def test_get_store_info_when_data_available(harness: Harness, provider_databag: dict) -> None:
     token = "token"
     relation_id = harness.add_relation("openfga", "provider")
     secret_id = harness.add_model_secret("provider", {"token": token})
@@ -112,7 +96,7 @@ def test_get_store_info_when_data_available(harness: Harness, provider_databag: 
     assert info.http_api_url == provider_databag["http_api_url"]
 
 
-def test_get_store_info_when_data_unavailable(harness: Harness, provider_databag: Dict) -> None:
+def test_get_store_info_when_data_unavailable(harness: Harness, provider_databag: dict) -> None:
     relation_id = harness.add_relation("openfga", "provider")
     harness.add_relation_unit(relation_id, "provider/0")
 
