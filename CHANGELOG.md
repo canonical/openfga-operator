@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/canonical/openfga-operator/compare/v1.1.0...v1.2.0) (2025-03-12)
+
+
+### Features
+
+* update the openfga lib to use Pydantic v2 ([bbe971b](https://github.com/canonical/openfga-operator/commit/bbe971bf5817668d6d34d640f8e458976fcb739b))
+* update the openfga lib to use Pydantic v2 ([85496af](https://github.com/canonical/openfga-operator/commit/85496afd115ea695ef4b6852088bbb30a97bc654))
+
+
+### Bug Fixes
+
+* fix the charm and tests ([7314abc](https://github.com/canonical/openfga-operator/commit/7314abc319be10f0f67c6226a10ffe749a848aba))
+
 ## [1.1.0](https://github.com/canonical/openfga-operator/compare/v1.0.0...v1.1.0) (2025-03-10)
 
 
