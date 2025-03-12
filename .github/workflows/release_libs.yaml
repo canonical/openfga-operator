@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - "lib/charms/openfga_k8s/**"
+      - "lib/charms/openfga_k8s/v1/**"
 
 jobs:
   release-libs:
