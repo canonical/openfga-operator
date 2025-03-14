@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/canonical/openfga-operator/compare/v1.2.0...v1.2.1) (2025-03-14)
+
+
+### Bug Fixes
+
+* remove the deprecated charm lib v0 to fix the charm lib release ([39bb259](https://github.com/canonical/openfga-operator/commit/39bb259096ff11497ee5515541d752415d0df91c))
+* remove the deprecated charm lib v0 to fix the charm lib release workflow ([3b3006f](https://github.com/canonical/openfga-operator/commit/3b3006f393a09a222b6e83db1da9e7b44df989db))
+
 ## [1.2.0](https://github.com/canonical/openfga-operator/compare/v1.1.0...v1.2.0) (2025-03-12)
 
 
