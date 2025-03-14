@@ -14,7 +14,7 @@ from pytest_mock import MockerFixture
 from charm import OpenFGAOperatorCharm
 
 
-@pytest.fixture()
+@pytest.fixture
 def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, None, None]:
     harness = Harness(OpenFGAOperatorCharm)
     harness.set_model_name("openfga-model")
@@ -30,19 +30,19 @@ def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, 
     tempdir.cleanup()
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_kubernetes_service_patcher(mocker: MockerFixture) -> MagicMock:
     mocked_service_patcher = mocker.patch("charm.KubernetesServicePatch")
     mocked_service_patcher.return_value = lambda x, y: None
     return mocked_service_patcher
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_migration_is_needed(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.OpenFGAOperatorCharm._migration_is_needed", return_value=False)
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_dsn(mocker: MockerFixture) -> MagicMock:
     return mocker.patch(
         "charm.OpenFGAOperatorCharm._dsn",
@@ -51,12 +51,12 @@ def mocked_dsn(mocker: MockerFixture) -> MagicMock:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_get_address(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.OpenFGAOperatorCharm._get_address", return_value="10.10.0.17")
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_create_openfga_store(mocker: MockerFixture) -> MagicMock:
     return mocker.patch(
         "charm.OpenFGAOperatorCharm._create_openfga_store",
@@ -64,17 +64,17 @@ def mocked_create_openfga_store(mocker: MockerFixture) -> MagicMock:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_token_urlsafe(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("secrets.token_urlsafe", return_value="test-token")
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_juju_version(mocker: MockerFixture) -> MagicMock:
     return mocker.patch.dict(os.environ, {"JUJU_VERSION": "3.2.1"})
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_workload_version(harness: Harness) -> str:
     version = "1.0.0"
     harness.handle_exec(
@@ -86,3 +86,19 @@ def mocked_workload_version(harness: Harness) -> str:
         ),
     )
     return version
+
+
+@pytest.fixture(scope="module")
+def provider_databag() -> dict:
+    return {
+        "store_id": "store_id",
+        "token": "token",
+        "token_secret_id": "token_secret_id",
+        "grpc_api_url": "http://http/model-openfga",
+        "http_api_url": "http://grpc/model-openfga",
+    }
+
+
+@pytest.fixture(scope="module")
+def requirer_databag() -> dict:
+    return {"store_name": "test-openfga-store"}
