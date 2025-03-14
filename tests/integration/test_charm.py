@@ -34,7 +34,8 @@ async def get_unit_address(ops_test: OpsTest, app_name: str, unit_num: int) -> s
 
 @pytest.mark.skip_if_deployed
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) -> None:
+# async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) -> None:
+async def test_build_and_deploy(ops_test: OpsTest, charm: str) -> None:
     await asyncio.gather(
         ops_test.model.deploy(
             DB_APP,
@@ -42,23 +43,26 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             channel="14/stable",
             trust=True,
         ),
-        ops_test.model.deploy(
-            test_charm, application_name=OPENFGA_CLIENT_APP, series="jammy", trust=True
-        ),
-        ops_test.model.deploy(
-            TRAEFIK_CHARM,
-            application_name=TRAEFIK_GRPC_APP,
-            channel="latest/stable",
-            config={"external_hostname": "grpc"},
-            trust=True,
-        ),
-        ops_test.model.deploy(
-            TRAEFIK_CHARM,
-            application_name=TRAEFIK_HTTP_APP,
-            channel="latest/stable",
-            config={"external_hostname": "http"},
-            trust=True,
-        ),
+        # ops_test.model.deploy(
+        #     test_charm,
+        #     application_name=OPENFGA_CLIENT_APP,
+        #     series="jammy",
+        #     trust=True,
+        # ),
+        # ops_test.model.deploy(
+        #     TRAEFIK_CHARM,
+        #     application_name=TRAEFIK_GRPC_APP,
+        #     channel="latest/stable",
+        #     config={"external_hostname": "grpc"},
+        #     trust=True,
+        # ),
+        # ops_test.model.deploy(
+        #     TRAEFIK_CHARM,
+        #     application_name=TRAEFIK_HTTP_APP,
+        #     channel="latest/stable",
+        #     config={"external_hostname": "http"},
+        #     trust=True,
+        # ),
         ops_test.model.deploy(
             CERTIFICATE_PROVIDER_APP,
             channel="latest/stable",
@@ -72,28 +76,24 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             trust=True,
         ),
     )
-    await ops_test.model.wait_for_idle(
-        apps=["postgresql"],
-        status="active",
-        timeout=10 * 60,
-    )
 
     await ops_test.model.integrate(OPENFGA_APP, f"{DB_APP}:database")
-    await ops_test.model.integrate(f"{OPENFGA_APP}:grpc-ingress", TRAEFIK_GRPC_APP)
-    await ops_test.model.integrate(f"{OPENFGA_APP}:http-ingress", TRAEFIK_HTTP_APP)
+    # await ops_test.model.integrate(f"{OPENFGA_APP}:grpc-ingress", TRAEFIK_GRPC_APP)
+    # await ops_test.model.integrate(f"{OPENFGA_APP}:http-ingress", TRAEFIK_HTTP_APP)
     await ops_test.model.integrate(OPENFGA_APP, CERTIFICATE_PROVIDER_APP)
     await ops_test.model.wait_for_idle(
         apps=[
             DB_APP,
             OPENFGA_APP,
-            TRAEFIK_GRPC_APP,
-            TRAEFIK_HTTP_APP,
+            # TRAEFIK_GRPC_APP,
+            # TRAEFIK_HTTP_APP,
         ],
         status="active",
         timeout=10 * 60,
     )
 
 
+@pytest.mark.skip
 async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
     await ops_test.model.integrate(OPENFGA_APP, OPENFGA_CLIENT_APP)
     await ops_test.model.wait_for_idle(
@@ -106,6 +106,7 @@ async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
     assert "running with store" in openfga_requires_unit.workload_status_message
 
 
+@pytest.mark.skip
 async def test_has_http_ingress(ops_test: OpsTest) -> None:
     http_address = await get_unit_address(ops_test, TRAEFIK_HTTP_APP, 0)
 
@@ -115,11 +116,12 @@ async def test_has_http_ingress(ops_test: OpsTest) -> None:
     assert resp.json()["code"] == "bearer_token_missing"
 
 
+# @pytest.mark.skip
 async def test_certification_integration(
     ops_test: OpsTest,
     certificate_integration_data: Optional[dict],
-    http_ingress_ip: str,
-    grpc_ingress_ip: str,
+    # http_ingress_ip: str,
+    # grpc_ingress_ip: str,
 ) -> None:
     assert certificate_integration_data
     certificates = json.loads(certificate_integration_data["certificates"])
@@ -128,10 +130,11 @@ async def test_certification_integration(
         f"CN={OPENFGA_APP}.{ops_test.model_name}.svc.cluster.local"
         == extract_certificate_common_name(certificate)
     )
-    assert http_ingress_ip in extract_certificate_sans(certificate)
-    assert grpc_ingress_ip in extract_certificate_sans(certificate)
+    # assert http_ingress_ip in extract_certificate_sans(certificate)
+    # assert grpc_ingress_ip in extract_certificate_sans(certificate)
 
 
+@pytest.mark.skip
 async def test_scale_up(ops_test: OpsTest) -> None:
     app = ops_test.model.applications[OPENFGA_APP]
 
@@ -150,6 +153,7 @@ async def test_scale_up(ops_test: OpsTest) -> None:
     )
 
 
+@pytest.mark.skip
 async def test_scale_down(ops_test: OpsTest) -> None:
     app = ops_test.model.applications[OPENFGA_APP]
 

@@ -35,35 +35,35 @@ class CertificatesIntegration:
         self._container = charm._container
 
         k8s_svc_host = f"{charm.app.name}.{charm.model.name}.svc.cluster.local"
-        sans_dns, sans_ip = [k8s_svc_host], []
+        sans_dns = [k8s_svc_host]
 
-        for ingress in (charm.http_ingress, charm.grpc_ingress):
-            if ingress_url := ingress.url:
-                ingress_domain, *_ = ingress_url.rsplit(sep=":", maxsplit=1)
-
-                try:
-                    ipaddress.ip_address(ingress_domain)
-                except ValueError:
-                    sans_dns.append(ingress_domain)
-                else:
-                    sans_ip.append(ingress_domain)
+        # for ingress in (charm.http_ingress, charm.grpc_ingress):
+        #     if ingress_url := ingress.url:
+        #         ingress_domain, *_ = ingress_url.rsplit(sep=":", maxsplit=1)
+        #
+        #         try:
+        #             ipaddress.ip_address(ingress_domain)
+        #         except ValueError:
+        #             sans_dns.append(ingress_domain)
+        #         else:
+        #             sans_ip.append(ingress_domain)
 
         self.csr_attributes = CertificateRequestAttributes(
             common_name=k8s_svc_host,
             sans_dns=frozenset(sans_dns),
-            sans_ip=frozenset(sans_ip),
+            # sans_ip=frozenset(sans_ip),
         )
         self.cert_requirer = TLSCertificatesRequiresV4(
             charm,
             relationship_name=CERTIFICATES_INTEGRATION_NAME,
             certificate_requests=[self.csr_attributes],
             mode=Mode.UNIT,
-            refresh_events=[
-                charm.http_ingress.on.ready,
-                charm.http_ingress.on.revoked,
-                charm.grpc_ingress.on.ready,
-                charm.grpc_ingress.on.revoked,
-            ],
+            # refresh_events=[
+            #     charm.http_ingress.on.ready,
+            #     charm.http_ingress.on.revoked,
+            #     charm.grpc_ingress.on.ready,
+            #     charm.grpc_ingress.on.revoked,
+            # ],
         )
 
     @property
@@ -90,12 +90,12 @@ class CertificatesIntegration:
 
     def update_certificates(self) -> None:
         if not self._charm.model.get_relation(CERTIFICATES_INTEGRATION_NAME):
-            logger.debug("The certificates integration is not ready.")
+            logger.info("The certificates integration is not ready.")
             self._remove_certificates()
             return
 
         if not self.certs_ready():
-            logger.debug("The certificates data is not ready.")
+            logger.info("The certificates data is not ready.")
             self._remove_certificates()
             return
 
@@ -103,8 +103,18 @@ class CertificatesIntegration:
         self._push_certificates()
 
     def certs_ready(self) -> bool:
+        logger.info(f"server key exists: {self._container.exists(SERVER_KEY)}")
+        logger.info(f"server cert exists: {self._container.exists(SERVER_CERT)}")
+        logger.info(f"cert file: {self._container.exists(CERTIFICATE_FILE)}")
+        logger.info(f"ca cert: {self._container.exists(SERVER_CA_CERT)}")
         certs, private_key = self.cert_requirer.get_assigned_certificate(self.csr_attributes)
+        logger.info(all((certs, private_key)))
         return all((certs, private_key))
+
+    def certs_installed(self) -> bool:
+        return (
+            self._container.exists(SERVER_KEY) and self._container.exists(SERVER_CERT) and self._container.exists(CERTIFICATE_FILE)
+        )
 
     def _prepare_certificates(self) -> None:
         SERVER_CA_CERT.write_text(self._ca_cert)  # type: ignore[arg-type]
@@ -134,8 +144,11 @@ class CertificatesIntegration:
         self._container.push(SERVER_CA_CERT, self._ca_cert, make_dirs=True)
         self._container.push(SERVER_KEY, self._server_key, make_dirs=True)
         self._container.push(SERVER_CERT, self._server_cert, make_dirs=True)
+        logger.info("push successfully")
 
     def _remove_certificates(self) -> None:
+        logger.info("remove certificates")
         for file in (CERTIFICATE_FILE, SERVER_CA_CERT, SERVER_KEY, SERVER_CERT):
             with suppress(PathError):
                 self._container.remove_path(file)
+        logger.info("remove successfully")

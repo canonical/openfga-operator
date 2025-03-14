@@ -55,7 +55,7 @@ from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, Waiting
 from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
-    DATABASE_NAME,
+    CERTIFICATES_INTEGRATION_NAME, DATABASE_NAME,
     DATABASE_RELATION_NAME,
     GRAFANA_RELATION_NAME,
     GRPC_INGRESS_RELATION_NAME,
@@ -263,17 +263,18 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
 
-        if self._certs_integration.certs_ready():
-            if self.http_ingress.is_ready():
-                env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
-                env_vars["OPENFGA_HTTP_TLS_CERT"] = SERVER_CERT
-                env_vars["OPENFGA_HTTP_TLS_KEY"] = SERVER_KEY
+        logger.info(f"certificates installed: {self._certs_integration.certs_installed()}")
+        if self._certs_integration.certs_installed():
+            logger.info("Going to enable TLS.")
+            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_HTTP_TLS_CERT"] = str(SERVER_CERT)
+            env_vars["OPENFGA_HTTP_TLS_KEY"] = str(SERVER_KEY)
 
-            if self.grpc_ingress.is_ready():
-                env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
-                env_vars["OPENFGA_GRPC_TLS_CERT"] = SERVER_CERT
-                env_vars["OPENFGA_GRPC_TLS_KEY"] = SERVER_KEY
+            env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_GRPC_TLS_CERT"] = str(SERVER_CERT)
+            env_vars["OPENFGA_GRPC_TLS_KEY"] = str(SERVER_KEY)
 
+        logger.info(f"env vars: {env_vars}")
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
             "description": "pebble layer for openfga",
@@ -290,13 +291,21 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga-http-check": {
                     "override": "replace",
                     "period": "1m",
-                    "http": {"url": f"http://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"},
+                    "http": {"url": f"https://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"},
                 },
                 "openfga-grpc-check": {
                     "override": "replace",
                     "period": "1m",
                     "exec": {
-                        "command": f"grpc_health_probe -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                        "command": f"grpc_health_probe -tls -tls-no-verify -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                    },
+                },
+                "up": {
+                    "override": "replace",
+                    "period": "1m",
+                    "level": "alive",
+                    "exec": {
+                        "command": f"grpc_health_probe -tls -tls-no-verify -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
                     },
                 },
             },
@@ -361,6 +370,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
 
+        logger.info(f"Update workload event: {event}")
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
             logger.info("workload container not ready - deferring")
@@ -378,8 +388,8 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # if openfga relation exists, make sure the address is updated
         self.openfga_relation.update_server_info(
-            http_api_url=self.http_ingress.url,
-            grpc_api_url=self.grpc_ingress.url,
+            http_api_url=self._get_http_url(),
+            grpc_api_url=self._get_grpc_url(),
         )
 
         self.unit.status = ActiveStatus()
@@ -541,8 +551,8 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.openfga_relation.update_relation_info(
             store_id=store_id,
-            http_api_url=self.http_ingress.url,
-            grpc_api_url=self.grpc_ingress.url,
+            http_api_url=self._get_http_url(),
+            grpc_api_url=self._get_grpc_url(),
             token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
@@ -636,6 +646,16 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._update_workload(event)
+
+    def _get_grpc_url(self) -> str:
+        scheme = "https" if self._certs_integration.certs_installed() else "http"
+        k8s_svc_host = f"{scheme}://{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"
+        return self.grpc_ingress.url or k8s_svc_host
+
+    def _get_http_url(self) -> str:
+        scheme = "https" if self._certs_integration.certs_installed() else "http"
+        k8s_svc_host = f"{scheme}://{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_HTTP_PORT}"
+        return self.http_ingress.url or k8s_svc_host
 
 
 def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:

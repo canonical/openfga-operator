@@ -88,6 +88,7 @@ parts:
       - requests ~= 2.32
       - jsonschema ~= 4.23
       - lightkube
+      - cryptography
     build-packages:
       - rustc
       - cargo
