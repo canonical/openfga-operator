@@ -36,8 +36,8 @@ class CertificatesIntegration:
         k8s_svc_host = f"{charm.app.name}.{charm.model.name}.svc.cluster.local"
         self.csr_attributes = CertificateRequestAttributes(
             common_name=k8s_svc_host,
-            sans_dns=frozenset((k8s_svc_host, "localhost")),
-            sans_ip=frozenset(("0.0.0.0",)),  # https://github.com/openfga/openfga/issues/2290
+            sans_dns=frozenset((k8s_svc_host,)),
+            sans_ip=frozenset(("127.0.0.1", "0.0.0.0")),  # https://github.com/openfga/openfga/issues/2290
         )
         self.cert_requirer = TLSCertificatesRequiresV4(
             charm,
@@ -87,43 +87,42 @@ class CertificatesIntegration:
             self._remove_certificates()
             return
 
-        self._prepare_certificates()
+        # self._prepare_certificates()
         self._push_certificates()
 
     def certs_ready(self) -> bool:
         certs, private_key = self.cert_requirer.get_assigned_certificate(self.csr_attributes)
         return all((certs, private_key))
 
-    def _prepare_certificates(self) -> None:
-        SERVER_CA_CERT.write_text(self._ca_cert)  # type: ignore[arg-type]
-        SERVER_KEY.write_text(self._server_key)  # type: ignore[arg-type]
-        SERVER_CERT.write_text(self._server_cert)  # type: ignore[arg-type]
-
-        try:
-            for attempt in Retrying(
-                wait=wait_fixed(3),
-                stop=stop_after_attempt(3),
-                retry=retry_if_exception_type(subprocess.CalledProcessError),
-                reraise=True,
-            ):
-                with attempt:
-                    subprocess.run(
-                        ["update-ca-certificates", "--fresh"],
-                        check=True,
-                        text=True,
-                        capture_output=True,
-                    )
-        except subprocess.CalledProcessError as e:
-            logger.error("Failed to update the TLS certificates: %s", e.stderr)
-            raise CertificatesError("Update the TLS certificates failed.")
+    # def _prepare_certificates(self) -> None:
+    #     SERVER_CA_CERT.write_text(self._ca_cert)  # type: ignore[arg-type]
+    #     SERVER_KEY.write_text(self._server_key)  # type: ignore[arg-type]
+    #     SERVER_CERT.write_text(self._server_cert)  # type: ignore[arg-type]
+    #
+    #     try:
+    #         for attempt in Retrying(
+    #             wait=wait_fixed(3),
+    #             stop=stop_after_attempt(3),
+    #             retry=retry_if_exception_type(subprocess.CalledProcessError),
+    #             reraise=True,
+    #         ):
+    #             with attempt:
+    #                 subprocess.run(
+    #                     ["update-ca-certificates", "--fresh"],
+    #                     check=True,
+    #                     text=True,
+    #                     capture_output=True,
+    #                 )
+    #     except subprocess.CalledProcessError as e:
+    #         logger.error("Failed to update the TLS certificates: %s", e.stderr)
+    #         raise CertificatesError("Update the TLS certificates failed.")
 
     def _push_certificates(self) -> None:
-        self._container.push(CERTIFICATE_FILE, CERTIFICATE_FILE.read_text(), make_dirs=True)
-        self._container.push(SERVER_CA_CERT, self._ca_cert, make_dirs=True)
+        self._container.push(CERTIFICATE_FILE, self._ca_cert, make_dirs=True)
         self._container.push(SERVER_KEY, self._server_key, make_dirs=True)
         self._container.push(SERVER_CERT, self._server_cert, make_dirs=True)
 
     def _remove_certificates(self) -> None:
-        for file in (CERTIFICATE_FILE, SERVER_CA_CERT, SERVER_KEY, SERVER_CERT):
+        for file in (CERTIFICATE_FILE, SERVER_KEY, SERVER_CERT):
             with suppress(PathError):
                 self._container.remove_path(file)

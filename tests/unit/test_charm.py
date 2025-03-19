@@ -89,14 +89,14 @@ def test_on_config_changed(
             "openfga-http-check": {
                 "override": "replace",
                 "period": "1m",
-                "http": {"url": "http://localhost:8080/healthz"},
+                "http": {"url": "http://127.0.0.1:8080/healthz"},
             },
             "openfga-grpc-check": {
                 "override": "replace",
                 "period": "1m",
                 "level": "alive",
                 "exec": {
-                    "command": "grpc_health_probe -addr localhost:8081",
+                    "command": "grpc_health_probe -addr 127.0.0.1:8081",
                 },
             },
         },

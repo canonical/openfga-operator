@@ -186,7 +186,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._uri_scheme = "https" if self._certs_integration.tls_enabled else "http"
         self.openfga = OpenFGA(
-            f"{self._uri_scheme}://localhost:{OPENFGA_SERVER_HTTP_PORT}", self._container
+            f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container
         )
 
     def _on_openfga_pebble_ready(self, event: PebbleReadyEvent) -> None:
@@ -297,7 +297,7 @@ class OpenFGAOperatorCharm(CharmBase):
                     "override": "replace",
                     "period": "1m",
                     "http": {
-                        "url": f"{self._uri_scheme}://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"
+                        "url": f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}/healthz"
                     },
                 },
                 "openfga-grpc-check": {
@@ -305,7 +305,7 @@ class OpenFGAOperatorCharm(CharmBase):
                     "period": "1m",
                     "level": "alive",
                     "exec": {
-                        "command": f"{grpc_command} -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                        "command": f"{grpc_command} -addr 127.0.0.1:{OPENFGA_SERVER_GRPC_PORT}",
                     },
                 },
             },
