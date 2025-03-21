@@ -18,7 +18,7 @@
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -31,6 +31,7 @@ from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tls_certificates_interface.v4.tls_certificates import CertificateAvailableEvent
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
     IngressPerAppRequirer,
@@ -54,6 +55,7 @@ from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, Waiting
 from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
+    CA_BUNDLE_FILE,
     DATABASE_NAME,
     DATABASE_RELATION_NAME,
     GRAFANA_RELATION_NAME,
@@ -67,9 +69,12 @@ from constants import (
     OPENFGA_SERVER_HTTP_PORT,
     PEER_KEY_DB_MIGRATE_VERSION,
     REQUIRED_SETTINGS,
+    SERVER_CERT,
+    SERVER_KEY,
     SERVICE_NAME,
     WORKLOAD_CONTAINER,
 )
+from integrations import CertificatesIntegration
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
@@ -87,7 +92,6 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self._container = self.unit.get_container(WORKLOAD_CONTAINER)
-        self.openfga = OpenFGA(f"http://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container)
         self.openfga_relation = OpenFGAProvider(self, relation_name=OPENFGA_RELATION_NAME)
 
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
@@ -161,6 +165,13 @@ class OpenFGAOperatorCharm(CharmBase):
         )
         self.framework.observe(self.on.database_relation_broken, self._on_database_relation_broken)
 
+        # Certificates integration
+        self._certs_integration = CertificatesIntegration(self)
+        self.framework.observe(
+            self._certs_integration.cert_requirer.on.certificate_available,
+            self._on_cert_changed,
+        )
+
         port_http = ServicePort(
             OPENFGA_SERVER_HTTP_PORT, name=f"{self.app.name}-http", protocol="TCP"
         )
@@ -171,6 +182,11 @@ class OpenFGAOperatorCharm(CharmBase):
             OPENFGA_METRICS_HTTP_PORT, name=f"{self.app.name}-metrics", protocol="TCP"
         )
         self.service_patcher = KubernetesServicePatch(self, [port_http, port_grpc, port_metrics])
+
+        self._uri_scheme = "https" if self._certs_integration.tls_enabled else "http"
+        self.openfga = OpenFGA(
+            f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}", self._container
+        )
 
     def _on_openfga_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Workload pebble ready."""
@@ -201,7 +217,7 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    def _get_database_relation_info(self) -> Optional[Dict]:
+    def _get_database_relation_info(self) -> Optional[dict]:
         """Get database info from relation data bag."""
         if not self.database.is_resource_created():
             return None
@@ -251,6 +267,18 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_AUTHN_METHOD"] = "preshared"
             env_vars["OPENFGA_AUTHN_PRESHARED_KEYS"] = token
 
+        grpc_command = "grpc_health_probe"
+        if self._certs_integration.tls_enabled:
+            grpc_command += f" -tls -tls-ca-cert {CA_BUNDLE_FILE}"
+
+            env_vars["OPENFGA_HTTP_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_HTTP_TLS_CERT"] = str(SERVER_CERT)
+            env_vars["OPENFGA_HTTP_TLS_KEY"] = str(SERVER_KEY)
+
+            env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
+            env_vars["OPENFGA_GRPC_TLS_CERT"] = str(SERVER_CERT)
+            env_vars["OPENFGA_GRPC_TLS_KEY"] = str(SERVER_KEY)
+
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
             "description": "pebble layer for openfga",
@@ -267,13 +295,16 @@ class OpenFGAOperatorCharm(CharmBase):
                 "openfga-http-check": {
                     "override": "replace",
                     "period": "1m",
-                    "http": {"url": f"http://localhost:{OPENFGA_SERVER_HTTP_PORT}/healthz"},
+                    "http": {
+                        "url": f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}/healthz"
+                    },
                 },
                 "openfga-grpc-check": {
                     "override": "replace",
                     "period": "1m",
+                    "level": "alive",
                     "exec": {
-                        "command": f"grpc_health_probe -addr localhost:{OPENFGA_SERVER_GRPC_PORT}",
+                        "command": f"{grpc_command} -addr 127.0.0.1:{OPENFGA_SERVER_GRPC_PORT}",
                     },
                 },
             },
@@ -338,6 +369,14 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Please run schema-upgrade action")
             return
 
+        try:
+            self._certs_integration.update_certificates()
+        except Error:
+            self.unit.status = BlockedStatus(
+                "Failed to update the TLS certificates, please check the logs"
+            )
+            return
+
         self._container.add_layer("openfga", self._pebble_layer, combine=True)
         if not self._ready():
             logger.info("workload container not ready - deferring")
@@ -355,8 +394,8 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # if openfga relation exists, make sure the address is updated
         self.openfga_relation.update_server_info(
-            http_api_url=self.http_ingress.url,
-            grpc_api_url=self.grpc_ingress.url,
+            http_api_url=self._get_http_url(),
+            grpc_api_url=self._get_grpc_url(),
         )
 
         self.unit.status = ActiveStatus()
@@ -518,8 +557,8 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.openfga_relation.update_relation_info(
             store_id=store_id,
-            http_api_url=self.http_ingress.url,
-            grpc_api_url=self.grpc_ingress.url,
+            http_api_url=self._get_http_url(),
+            grpc_api_url=self._get_grpc_url(),
             token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
@@ -599,8 +638,23 @@ class OpenFGAOperatorCharm(CharmBase):
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent) -> None:
         self._update_workload(event)
 
+    def _on_cert_changed(self, event: CertificateAvailableEvent) -> None:
+        if not self._is_openfga_server_running():
+            event.defer()
+            return
 
-def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> Dict:
+        self._update_workload(event)
+
+    def _get_grpc_url(self) -> str:
+        k8s_svc = f"{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"
+        return self.grpc_ingress.url or k8s_svc
+
+    def _get_http_url(self) -> str:
+        k8s_svc = f"{self._uri_scheme}://{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_HTTP_PORT}"
+        return self.http_ingress.url or k8s_svc
+
+
+def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> dict:
     """Map config values to environment variables.
 
     Maps the config values provided in config.yaml into environment

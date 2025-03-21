@@ -55,6 +55,7 @@ class OpenFGA:
             "{}/stores".format(self.openfga_http_url),
             json={"name": store_name},
             headers=headers,
+            verify=False,
         )
         r.raise_for_status()
 
@@ -69,6 +70,7 @@ class OpenFGA:
         r = requests.get(
             url,
             headers=headers,
+            verify=False,
         )
         r.raise_for_status()
 

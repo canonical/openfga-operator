@@ -19,6 +19,7 @@ def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, 
     harness = Harness(OpenFGAOperatorCharm)
     harness.set_model_name("openfga-model")
     harness.add_oci_resource("oci-image")
+    harness.set_can_connect("openfga", True)
     harness.set_leader(True)
     harness.begin()
     tempdir = tempfile.TemporaryDirectory()
