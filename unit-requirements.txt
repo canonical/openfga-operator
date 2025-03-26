@@ -2,6 +2,7 @@
 charmhelpers
 coverage[toml]
 cryptography
+jsonschema
 pytest
 pytest-mock
 requests

@@ -5,7 +5,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 import pytest
 from conftest import (
@@ -87,7 +87,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
 
 
 async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
-    await ops_test.model.integrate(OPENFGA_APP, OPENFGA_CLIENT_APP)
+    await ops_test.model.integrate(f"{OPENFGA_APP}:openfga", f"{OPENFGA_CLIENT_APP}:openfga")
     await ops_test.model.wait_for_idle(
         apps=[OPENFGA_CLIENT_APP, OPENFGA_APP],
         status="active",
@@ -115,6 +115,43 @@ async def test_certification_integration(
     assert certificate_integration_data
     certificates = json.loads(certificate_integration_data["certificates"])
     certificate = certificates[0]["certificate"]
+    assert (
+        f"CN={OPENFGA_APP}.{ops_test.model_name}.svc.cluster.local"
+        == extract_certificate_common_name(certificate)
+    )
+
+
+async def test_certificate_transfer_integration(
+    ops_test: OpsTest,
+    unit_integration_data: Callable,
+) -> None:
+    await ops_test.model.integrate(
+        f"{OPENFGA_CLIENT_APP}:receive-ca-cert",
+        f"{OPENFGA_APP}:send-ca-cert",
+    )
+
+    await ops_test.model.wait_for_idle(
+        apps=[OPENFGA_APP, OPENFGA_CLIENT_APP],
+        status="active",
+        timeout=5 * 60,
+    )
+
+    certificate_transfer_integration_data = await unit_integration_data(
+        OPENFGA_CLIENT_APP,
+        OPENFGA_APP,
+        "receive-ca-cert",
+    )
+    assert certificate_transfer_integration_data, "Certificate transfer integration data is empty."
+
+    for key in ("ca", "certificate", "chain"):
+        assert key in certificate_transfer_integration_data, (
+            f"Missing '{key}' in certificate transfer integration data."
+        )
+
+    chain = certificate_transfer_integration_data["chain"]
+    assert isinstance(json.loads(chain), list), "Invalid certificate chain."
+
+    certificate = certificate_transfer_integration_data["certificate"]
     assert (
         f"CN={OPENFGA_APP}.{ops_test.model_name}.svc.cluster.local"
         == extract_certificate_common_name(certificate)
