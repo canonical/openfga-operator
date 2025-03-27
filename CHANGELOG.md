@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/canonical/openfga-operator/compare/v1.3.0...v1.3.1) (2025-03-27)
+
+
+### Bug Fixes
+
+* add optional values to charmcraft ([f339cfa](https://github.com/canonical/openfga-operator/commit/f339cfae62bcf82609821301999f8856c6a2f3f2))
+* use optional flags in charmcraft ([d683b29](https://github.com/canonical/openfga-operator/commit/d683b296808c4d8f15c4b0fdc5c0cebe4d63c008))
+
 ## [1.3.0](https://github.com/canonical/openfga-operator/compare/v1.2.1...v1.3.0) (2025-03-27)
 
 
