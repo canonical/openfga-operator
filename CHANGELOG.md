@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/canonical/openfga-operator/compare/v1.2.1...v1.3.0) (2025-03-27)
+
+
+### Features
+
+* add terraform module ([237e9b8](https://github.com/canonical/openfga-operator/commit/237e9b85b4c23494bd049ddd2a103d78c3c965ed))
+* add the terraform module ([f3bcea6](https://github.com/canonical/openfga-operator/commit/f3bcea6015315ffc22b9e9e979cadad5a5a231d2))
+* add tls-certificates integration ([5f46194](https://github.com/canonical/openfga-operator/commit/5f46194a65db0d01cfe91774c23594562007e0a3))
+* add tls-certificates integration ([67db776](https://github.com/canonical/openfga-operator/commit/67db7766212be82eb031d4565ad47e8724796f3c))
+
+
+### Bug Fixes
+
+* fix the lint ci ([b786db7](https://github.com/canonical/openfga-operator/commit/b786db745cd20ab16e27e01a27e49ed3b777aefa))
+
 ## [1.2.1](https://github.com/canonical/openfga-operator/compare/v1.2.0...v1.2.1) (2025-03-14)
 
 
