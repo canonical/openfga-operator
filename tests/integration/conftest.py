@@ -91,9 +91,24 @@ async def get_app_integration_data(
     return data["application-data"] if data else None
 
 
+async def get_unit_integration_data(
+    ops_test: OpsTest,
+    app_name: str,
+    remote_app_name: str,
+    integration_name: str,
+) -> Optional[dict]:
+    data = await get_integration_data(ops_test, app_name, integration_name)
+    return data["related-units"][f"{remote_app_name}/0"]["data"] if data else None
+
+
 @pytest_asyncio.fixture
 async def app_integration_data(ops_test: OpsTest) -> Callable:
     return functools.partial(get_app_integration_data, ops_test)
+
+
+@pytest_asyncio.fixture
+async def unit_integration_data(ops_test: OpsTest) -> Callable:
+    return functools.partial(get_unit_integration_data, ops_test)
 
 
 @pytest_asyncio.fixture

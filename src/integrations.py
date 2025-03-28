@@ -3,8 +3,12 @@
 
 import logging
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Optional
 
+from charms.certificate_transfer_interface.v0.certificate_transfer import (
+    CertificateTransferProvides,
+)
 from charms.tls_certificates_interface.v4.tls_certificates import (
     CertificateRequestAttributes,
     Mode,
@@ -17,11 +21,19 @@ from ops.pebble import PathError
 from constants import (
     CA_BUNDLE_FILE,
     CERTIFICATES_INTEGRATION_NAME,
+    CERTIFICATES_TRANSFER_INTEGRATION_NAME,
     SERVER_CERT,
     SERVER_KEY,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CertificateData:
+    ca_cert: Optional[str] = None
+    ca_chain: Optional[list[str]] = None
+    cert: Optional[str] = None
 
 
 class CertificatesIntegration:
@@ -75,20 +87,28 @@ class CertificatesIntegration:
         cert, *_ = self.cert_requirer.get_assigned_certificate(self.csr_attributes)
         return cert
 
+    @property
+    def cert_data(self) -> CertificateData:
+        return CertificateData(
+            ca_cert=self._ca_cert,
+            ca_chain=self._ca_chain,
+            cert=self._server_cert,
+        )
+
     def update_certificates(self) -> None:
         if not self._charm.model.get_relation(CERTIFICATES_INTEGRATION_NAME):
             logger.info("The certificates integration is not ready.")
             self._remove_certificates()
             return
 
-        if not self.certs_ready():
+        if not self._certs_ready():
             logger.info("The certificates data is not ready.")
             self._remove_certificates()
             return
 
         self._push_certificates()
 
-    def certs_ready(self) -> bool:
+    def _certs_ready(self) -> bool:
         certs, private_key = self.cert_requirer.get_assigned_certificate(self.csr_attributes)
         return all((certs, private_key))
 
@@ -101,3 +121,36 @@ class CertificatesIntegration:
         for file in (CA_BUNDLE_FILE, SERVER_KEY, SERVER_CERT):
             with suppress(PathError):
                 self._container.remove_path(file)
+
+
+class CertificatesTransferIntegration:
+    def __init__(self, charm: CharmBase):
+        self._charm = charm
+        self._certs_transfer_provider = CertificateTransferProvides(
+            charm, relationship_name=CERTIFICATES_TRANSFER_INTEGRATION_NAME
+        )
+
+    def transfer_certificates(
+        self, /, data: CertificateData, relation_id: Optional[int] = None
+    ) -> None:
+        if not (
+            relations := self._charm.model.relations.get(CERTIFICATES_TRANSFER_INTEGRATION_NAME)
+        ):
+            return
+
+        if relation_id is not None:
+            relations = [relation for relation in relations if relation.id == relation_id]
+
+        ca_cert, ca_chain, certificate = data.ca_cert, data.ca_chain, data.cert
+        if not all((ca_cert, ca_chain, certificate)):
+            for relation in relations:
+                self._certs_transfer_provider.remove_certificate(relation_id=relation.id)
+            return
+
+        for relation in relations:
+            self._certs_transfer_provider.set_certificate(
+                ca=data.ca_cert,  # type: ignore[arg-type]
+                chain=data.ca_chain,  # type: ignore[arg-type]
+                certificate=data.cert,  # type: ignore[arg-type]
+                relation_id=relation.id,
+            )

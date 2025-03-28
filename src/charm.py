@@ -48,7 +48,7 @@ from ops import (
     StopEvent,
     UpdateStatusEvent,
 )
-from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent
+from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent, RelationJoinedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
@@ -56,6 +56,7 @@ from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
     CA_BUNDLE_FILE,
+    CERTIFICATES_TRANSFER_INTEGRATION_NAME,
     DATABASE_NAME,
     DATABASE_RELATION_NAME,
     GRAFANA_RELATION_NAME,
@@ -74,7 +75,7 @@ from constants import (
     SERVICE_NAME,
     WORKLOAD_CONTAINER,
 )
-from integrations import CertificatesIntegration
+from integrations import CertificatesIntegration, CertificatesTransferIntegration
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
@@ -170,6 +171,13 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(
             self._certs_integration.cert_requirer.on.certificate_available,
             self._on_cert_changed,
+        )
+
+        # Certificate transfer integration
+        self._certs_transfer_integration = CertificatesTransferIntegration(self)
+        self.framework.observe(
+            self.on[CERTIFICATES_TRANSFER_INTEGRATION_NAME].relation_joined,
+            self._on_certificates_transfer_relation_joined,
         )
 
         port_http = ServicePort(
@@ -644,6 +652,18 @@ class OpenFGAOperatorCharm(CharmBase):
             return
 
         self._update_workload(event)
+        self._certs_transfer_integration.transfer_certificates(
+            self._certs_integration.cert_data,
+        )
+
+    def _on_certificates_transfer_relation_joined(self, event: RelationJoinedEvent) -> None:
+        if not self._certs_integration.tls_enabled:
+            event.defer()
+            return
+
+        self._certs_transfer_integration.transfer_certificates(
+            self._certs_integration.cert_data, event.relation.id
+        )
 
     def _get_grpc_url(self) -> str:
         k8s_svc = f"{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"

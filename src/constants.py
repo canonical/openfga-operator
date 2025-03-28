@@ -30,6 +30,7 @@ LOGGING_RELATION_NAME = "logging"
 METRIC_RELATION_NAME = "metrics-endpoint"
 OPENFGA_RELATION_NAME = "openfga"
 CERTIFICATES_INTEGRATION_NAME = "certificates"
+CERTIFICATES_TRANSFER_INTEGRATION_NAME = "send-ca-cert"
 
 CA_BUNDLE_FILE = Path("/etc/ssl/certs/ca-certificates.crt")
 PRIVATE_KEY_DIR = Path("/etc/ssl/private")

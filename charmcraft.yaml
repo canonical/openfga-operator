@@ -38,6 +38,10 @@ provides:
     interface: grafana_dashboard
   metrics-endpoint:
     interface: prometheus_scrape
+  send-ca-cert:
+    description: |
+      Transfer CA certificates to client charmed operators.
+    interface: certificate_transfer
 
 requires:
   http-ingress:
