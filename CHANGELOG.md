@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/canonical/openfga-operator/compare/v1.3.1...v1.4.0) (2025-03-28)
+
+
+### Features
+
+* implement certificate transfer integration ([eb88a9a](https://github.com/canonical/openfga-operator/commit/eb88a9aa9898630cf50ea98383fe8d122093712e))
+
 ## [1.3.1](https://github.com/canonical/openfga-operator/compare/v1.3.0...v1.3.1) (2025-03-27)
 
 
