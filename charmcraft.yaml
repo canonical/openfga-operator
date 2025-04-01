@@ -96,10 +96,10 @@ parts:
       - jsonschema ~= 4.23
       - lightkube
       - cryptography
+      - "setuptools>=70.0.0"
     build-packages:
       - rustc
       - cargo
 
-base: ubuntu@22.04
 platforms:
-  amd64:
+  ubuntu@22.04:amd64:
