@@ -3,6 +3,7 @@
 
 import functools
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -40,8 +41,11 @@ def extract_certificate_common_name(certificate: str) -> Optional[str]:
 
 @pytest_asyncio.fixture(scope="module")
 async def charm(ops_test: OpsTest) -> Path:
-    logger.info("Building local charm")
-    charm = await fetch_charm(ops_test, "*.charm", ".")
+    # in GitHub CI, charms are built with charmcraftcache and uploaded to $CHARM_PATH
+    charm = os.getenv("CHARM_PATH")
+    if not charm:
+        # fall back to build locally - required when run outside of GitHub CI
+        charm = await ops_test.build_charm(".")
     return charm
 
 

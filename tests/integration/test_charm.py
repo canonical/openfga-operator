@@ -5,6 +5,7 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Callable, Optional
 
 import pytest
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.skip_if_deployed
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) -> None:
+async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str) -> None:
     await asyncio.gather(
         ops_test.model.deploy(
             DB_APP,
@@ -60,7 +61,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: str, test_charm: str) 
             trust=True,
         ),
         ops_test.model.deploy(
-            charm,
+            entity_url=str(charm),
             application_name=OPENFGA_APP,
             resources={"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]},
             series="jammy",
