@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/canonical/openfga-operator/compare/v1.4.0...v1.4.1) (2025-04-01)
+
+
+### Bug Fixes
+
+* address CVEs ([fdce924](https://github.com/canonical/openfga-operator/commit/fdce924ec35cbfd143a223e876906b3b7ab7fccd))
+
 ## [1.4.0](https://github.com/canonical/openfga-operator/compare/v1.3.1...v1.4.0) (2025-03-28)
 
 
