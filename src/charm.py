@@ -31,6 +31,7 @@ from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.tls_certificates_interface.v4.tls_certificates import CertificateAvailableEvent
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppReadyEvent,
@@ -126,6 +127,14 @@ class OpenFGAOperatorCharm(CharmBase):
             refresh_event=self.on.config_changed,
             relation_name=METRIC_RELATION_NAME,
         )
+
+        # Tracing integration
+        self.tracing = TracingEndpointRequirer(
+            self,
+            protocols=["otlp_grpc"],
+        )
+        self.framework.observe(self.tracing.on.endpoint_changed, self._on_tracing_endpoint_changed)
+        self.framework.observe(self.tracing.on.endpoint_removed, self._on_tracing_endpoint_changed)
 
         # OpenFGA relation
         self.framework.observe(
@@ -269,6 +278,8 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
         env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
         env_vars["OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS"] = "true"
+        env_vars["OPENFGA_METRICS_ENABLED"] = "true"
+        env_vars["OPENFGA_DATASTORE_METRICS_ENABLED"] = "true"
 
         token = self._get_token()
         if token:
@@ -286,6 +297,11 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
             env_vars["OPENFGA_GRPC_TLS_CERT"] = str(SERVER_CERT)
             env_vars["OPENFGA_GRPC_TLS_KEY"] = str(SERVER_KEY)
+
+        if self.tracing.is_ready():
+            env_vars["OPENFGA_TRACE_ENABLED"] = "true"
+            env_vars["OPENFGA_TRACE_OTLP_ENDPOINT"] = self.tracing.get_endpoint("otlp_grpc")
+            env_vars["OPENFGA_TRACE_SAMPLE_RATIO"] = "0.3"
 
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
@@ -664,6 +680,9 @@ class OpenFGAOperatorCharm(CharmBase):
         self._certs_transfer_integration.transfer_certificates(
             self._certs_integration.cert_data, event.relation.id
         )
+
+    def _on_tracing_endpoint_changed(self, event: HookEvent) -> None:
+        self._update_workload(event)
 
     def _get_grpc_url(self) -> str:
         k8s_svc = f"{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"
