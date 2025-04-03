@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/canonical/openfga-operator/compare/v1.4.1...v1.4.2) (2025-04-03)
+
+
+### Bug Fixes
+
+* add the check before querying the container file system ([1102fa9](https://github.com/canonical/openfga-operator/commit/1102fa9cb1d6189009027399627be834188bf604))
+* add the check before querying the container file system ([57c3ce6](https://github.com/canonical/openfga-operator/commit/57c3ce61b8acc1efe69176483520acfcaabe784f))
+
 ## [1.4.1](https://github.com/canonical/openfga-operator/compare/v1.4.0...v1.4.1) (2025-04-01)
 
 
