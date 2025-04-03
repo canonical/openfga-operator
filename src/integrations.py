@@ -59,6 +59,9 @@ class CertificatesIntegration:
 
     @property
     def tls_enabled(self) -> bool:
+        if not self._container.can_connect():
+            return False
+
         return (
             self._container.exists(SERVER_KEY)
             and self._container.exists(SERVER_CERT)
