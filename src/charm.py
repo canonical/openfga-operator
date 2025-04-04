@@ -269,6 +269,10 @@ class OpenFGAOperatorCharm(CharmBase):
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
         env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
         env_vars["OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS"] = "true"
+        env_vars["OPENFGA_METRICS_ENABLED"] = "true"
+        env_vars["OPENFGA_DATASTORE_METRICS_ENABLED"] = "true"
+        env_vars["OPENFGA_TRACE_ENABLED"] = "true"
+        env_vars["OPENFGA_TRACE_SAMPLE_RATIO"] = "0.3"
 
         token = self._get_token()
         if token:
@@ -286,6 +290,8 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_GRPC_TLS_ENABLED"] = "true"
             env_vars["OPENFGA_GRPC_TLS_CERT"] = str(SERVER_CERT)
             env_vars["OPENFGA_GRPC_TLS_KEY"] = str(SERVER_KEY)
+
+            env_vars["OPENFGA_TRACE_OTLP_TLS_ENABLED"] = "true"
 
         pebble_layer: LayerDict = {
             "summary": "openfga layer",
