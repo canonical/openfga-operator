@@ -52,7 +52,7 @@ LIBAPI = 4
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 10
+LIBPATCH = 13
 
 PYDEPS = [
     "cryptography>=43.0.0",
@@ -190,9 +190,11 @@ class Mode(Enum):
     """Enum representing the mode of the certificate request.
 
     UNIT (default): Request a certificate for the unit.
-        Each unit will have its own private key and certificate.
+        Each unit will manage its private key,
+        certificate signing request and certificate.
     APP: Request a certificate for the application.
-        The private key and certificate will be shared by all units.
+        Only the leader unit will manage the private key, certificate signing request
+        and certificate.
     """
 
     UNIT = 1
@@ -376,6 +378,7 @@ class CertificateSigningRequest:
     country_name: Optional[str] = None
     state_or_province_name: Optional[str] = None
     locality_name: Optional[str] = None
+    has_unique_identifier: bool = False
 
     def __eq__(self, other: object) -> bool:
         """Check if two CertificateSigningRequest objects are equal."""
@@ -402,12 +405,20 @@ class CertificateSigningRequest:
         )
         locality_name = csr_object.subject.get_attributes_for_oid(NameOID.LOCALITY_NAME)
         organization_name = csr_object.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+        organizational_unit = csr_object.subject.get_attributes_for_oid(
+            NameOID.ORGANIZATIONAL_UNIT_NAME
+        )
         email_address = csr_object.subject.get_attributes_for_oid(NameOID.EMAIL_ADDRESS)
+        unique_identifier = csr_object.subject.get_attributes_for_oid(
+            NameOID.X500_UNIQUE_IDENTIFIER
+        )
         try:
             sans = csr_object.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
             sans_dns = frozenset(sans.get_values_for_type(x509.DNSName))
             sans_ip = frozenset([str(san) for san in sans.get_values_for_type(x509.IPAddress)])
-            sans_oid = frozenset([str(san) for san in sans.get_values_for_type(x509.RegisteredID)])
+            sans_oid = frozenset(
+                [san.dotted_string for san in sans.get_values_for_type(x509.RegisteredID)]
+            )
         except x509.ExtensionNotFound:
             sans = frozenset()
             sans_dns = frozenset()
@@ -422,10 +433,12 @@ class CertificateSigningRequest:
             else None,
             locality_name=str(locality_name[0].value) if locality_name else None,
             organization=str(organization_name[0].value) if organization_name else None,
+            organizational_unit=str(organizational_unit[0].value) if organizational_unit else None,
             email_address=str(email_address[0].value) if email_address else None,
             sans_dns=sans_dns,
             sans_ip=sans_ip,
             sans_oid=sans_oid,
+            has_unique_identifier=bool(unique_identifier),
         )
 
     def matches_private_key(self, key: PrivateKey) -> bool:
@@ -500,6 +513,7 @@ class CertificateRequestAttributes:
     state_or_province_name: Optional[str] = None
     locality_name: Optional[str] = None
     is_ca: bool = False
+    add_unique_id_to_subject_name: bool = True
 
     def is_valid(self) -> bool:
         """Check whether the certificate request is valid."""
@@ -531,6 +545,7 @@ class CertificateRequestAttributes:
             country_name=self.country_name,
             state_or_province_name=self.state_or_province_name,
             locality_name=self.locality_name,
+            add_unique_id_to_subject_name=self.add_unique_id_to_subject_name,
         )
 
     @classmethod
@@ -548,6 +563,7 @@ class CertificateRequestAttributes:
             state_or_province_name=csr.state_or_province_name,
             locality_name=csr.locality_name,
             is_ca=is_ca,
+            add_unique_id_to_subject_name=csr.has_unique_identifier,
         )
 
 
@@ -1014,6 +1030,15 @@ class TLSCertificatesRequiresV4(Object):
             certificate_requests (List[CertificateRequestAttributes]):
                 A list with the attributes of the certificate requests.
             mode (Mode): Whether to use unit or app certificates mode. Default is Mode.UNIT.
+                In UNIT mode the requirer will place the csr in the unit relation data.
+                Each unit will manage its private key,
+                certificate signing request and certificate.
+                UNIT mode is for use cases where each unit has its own identity.
+                If you don't know which mode to use, you likely need UNIT.
+                In APP mode the leader unit will place the csr in the app relation databag.
+                APP mode is for use cases where the underlying application needs the certificate
+                for example using it as an intermediate CA to sign other certificates.
+                The certificate can only be accessed by the leader unit.
             refresh_events (List[BoundEvent]): A list of events to trigger a refresh of
               the certificates.
             private_key (Optional[PrivateKey]): The private key to use for the certificates.
