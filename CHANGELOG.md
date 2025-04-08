@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/canonical/openfga-operator/compare/v1.4.2...v1.5.0) (2025-04-08)
+
+
+### Features
+
+* follow the production best practice guide ([ffca37e](https://github.com/canonical/openfga-operator/commit/ffca37e4e709f8d1954320113b91daf33d1a96ff))
+* follow the production best practice guide ([a580043](https://github.com/canonical/openfga-operator/commit/a5800438c35469f8c5ee9fcf8c0f142dc7bdd2f3))
+
 ## [1.4.2](https://github.com/canonical/openfga-operator/compare/v1.4.1...v1.4.2) (2025-04-03)
 
 
