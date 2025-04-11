@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/canonical/openfga-operator/compare/v1.5.0...v1.5.1) (2025-04-11)
+
+
+### Bug Fixes
+
+* fix the TIOBE analysis ([f47e67e](https://github.com/canonical/openfga-operator/commit/f47e67e63cecb490fd996f4c0f728f6ce5c40fc7))
+
 ## [1.5.0](https://github.com/canonical/openfga-operator/compare/v1.4.2...v1.5.0) (2025-04-08)
 
 
