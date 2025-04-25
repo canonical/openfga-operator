@@ -95,9 +95,8 @@ juju integrate loki:logging openfga-k8s:logging
 
 ## Security
 
-Security issues in the Charmed OpenFGA k8s Operator can be reported
-through [LaunchPad](https://wiki.ubuntu.com/DebuggingSecurity#How%20to%20File).
-Please do not file GitHub issues about security issues.
+Please see [SECURITY.md](https://github.com/canonical/openfga-operator/blob/main/SECURITY.md)
+for guidelines on reporting security issues.
 
 ## Contributing
 
