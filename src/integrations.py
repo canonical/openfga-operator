@@ -4,11 +4,12 @@
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Self
 
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
     CertificateTransferProvides,
 )
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.tls_certificates_interface.v4.tls_certificates import (
     CertificateRequestAttributes,
     Mode,
@@ -22,11 +23,46 @@ from constants import (
     CA_BUNDLE_FILE,
     CERTIFICATES_INTEGRATION_NAME,
     CERTIFICATES_TRANSFER_INTEGRATION_NAME,
+    POSTGRESQL_DSN_TEMPLATE,
     SERVER_CERT,
     SERVER_KEY,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseConfig:
+    """The data source from the database integration."""
+
+    endpoint: str = ""
+    database: str = ""
+    username: str = ""
+    password: str = ""
+
+    @property
+    def dsn(self) -> str:
+        return POSTGRESQL_DSN_TEMPLATE.substitute(
+            username=self.username,
+            password=self.password,
+            endpoint=self.endpoint,
+            database=self.database,
+        )
+
+    @classmethod
+    def load(cls, requirer: DatabaseRequires) -> Self:
+        if not (database_integrations := requirer.relations):
+            return cls()
+
+        integration_id = database_integrations[0].id
+        integration_data: dict[str, str] = requirer.fetch_relation_data()[integration_id]
+
+        return cls(
+            endpoint=integration_data.get("endpoints", "").split(",")[0],
+            database=requirer.database,
+            username=integration_data.get("username", ""),
+            password=integration_data.get("password", ""),
+        )
 
 
 @dataclass

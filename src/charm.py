@@ -82,7 +82,7 @@ from constants import (
     SERVICE_NAME,
     WORKLOAD_CONTAINER,
 )
-from integrations import CertificatesIntegration, CertificatesTransferIntegration
+from integrations import CertificatesIntegration, CertificatesTransferIntegration, DatabaseConfig
 from openfga import OpenFGA
 from state import State, requires_state, requires_state_setter
 
@@ -168,7 +168,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(self.grpc_ingress.on.ready, self._on_ingress_ready)
         self.framework.observe(self.grpc_ingress.on.revoked, self._on_ingress_revoked)
 
-        # Database relation
+        # Database integration
         self.database = DatabaseRequires(
             self,
             relation_name=DATABASE_RELATION_NAME,
@@ -250,36 +250,9 @@ class OpenFGAOperatorCharm(CharmBase):
         """Update the status of the charm."""
         self._ready()
 
-    def _get_database_relation_info(self) -> Optional[dict]:
-        """Get database info from relation data bag."""
-        if not self.database.is_resource_created():
-            return None
-
-        relation_id = self.database.relations[0].id
-        relation_data = self.database.fetch_relation_data()[relation_id]
-        return {
-            "username": relation_data.get("username"),
-            "password": relation_data.get("password"),
-            "endpoints": relation_data.get("endpoints"),
-            "database_name": DATABASE_NAME,
-        }
-
     @property
     def _log_level(self) -> str:
         return self.config["log-level"]
-
-    @property
-    def _dsn(self) -> Optional[str]:
-        db_info = self._get_database_relation_info()
-        if not db_info:
-            return None
-
-        return "postgres://{username}:{password}@{endpoints}/{database_name}".format(
-            username=db_info.get("username"),
-            password=db_info.get("password"),
-            endpoints=db_info.get("endpoints"),
-            database_name=db_info.get("database_name"),
-        )
 
     @property
     def _migration_peer_data_key(self) -> Optional[str]:
@@ -289,10 +262,11 @@ class OpenFGAOperatorCharm(CharmBase):
 
     @property
     def _pebble_layer(self) -> Layer:
+        database_config = DatabaseConfig.load(self.database)
         env_vars = map_config_to_env_vars(self)
         env_vars["OPENFGA_PLAYGROUND_ENABLED"] = "false"
         env_vars["OPENFGA_DATASTORE_ENGINE"] = "postgres"
-        env_vars["OPENFGA_DATASTORE_URI"] = self._dsn
+        env_vars["OPENFGA_DATASTORE_URI"] = database_config.dsn
         env_vars["OPENFGA_METRICS_ENABLE_RPC_HISTOGRAMS"] = "true"
         env_vars["OPENFGA_METRICS_ENABLED"] = "true"
         env_vars["OPENFGA_DATASTORE_METRICS_ENABLED"] = "true"
@@ -403,7 +377,7 @@ class OpenFGAOperatorCharm(CharmBase):
             self.unit.status = BlockedStatus("Missing required relation with postgresql")
             return
 
-        if not self._dsn:
+        if not self.database.is_resource_created():
             self.unit.status = WaitingStatus("Waiting for database creation")
             return
 
@@ -502,12 +476,13 @@ class OpenFGAOperatorCharm(CharmBase):
 
         Returns True if migration was run successfully, else returns false.
         """
-        if not (dsn := self._dsn):
+        if not self.database.is_resource_created():
             logger.info("No database integration")
             return False
 
+        database_config = DatabaseConfig.load(self.database)
         try:
-            self.openfga.run_migration(dsn)
+            self.openfga.run_migration(database_config.dsn)
             logger.info("Successfully executed the database migration")
         except Error as e:
             err_msg = e.stderr if isinstance(e, ExecError) else e
