@@ -1,10 +1,12 @@
-# Copyright 2023 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Constants."""
 
 from pathlib import Path
+from string import Template
 
+# Charm constants
+POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
 WORKLOAD_CONTAINER = "openfga"
 SERVICE_NAME = "openfga"
 
@@ -22,6 +24,7 @@ PEER_KEY_DB_MIGRATE_VERSION = "db_migrate_version"
 
 DATABASE_NAME = "openfga"
 
+# Integration constants
 DATABASE_RELATION_NAME = "database"
 HTTP_INGRESS_RELATION_NAME = "http-ingress"
 GRPC_INGRESS_RELATION_NAME = "grpc-ingress"
