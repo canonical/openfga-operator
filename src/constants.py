@@ -8,7 +8,10 @@ from string import Template
 # Charm constants
 POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
 WORKLOAD_CONTAINER = "openfga"
+WORKLOAD_SERVICE = "openfga"
 SERVICE_NAME = "openfga"
+PRESHARED_TOKEN_SECRET_KEY = "token"
+PRESHARED_TOKEN_SECRET_LABEL = "token"
 
 REQUIRED_SETTINGS = [
     "OPENFGA_DATASTORE_URI",
@@ -34,6 +37,7 @@ METRIC_RELATION_NAME = "metrics-endpoint"
 OPENFGA_RELATION_NAME = "openfga"
 CERTIFICATES_INTEGRATION_NAME = "certificates"
 CERTIFICATES_TRANSFER_INTEGRATION_NAME = "send-ca-cert"
+PEER_INTEGRATION_NAME = "openfga"
 
 CA_BUNDLE_FILE = Path("/etc/ssl/certs/ca-certificates.crt")
 PRIVATE_KEY_DIR = Path("/etc/ssl/private")
