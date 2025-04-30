@@ -28,7 +28,7 @@ links:
   issues: https://github.com/canonical/openfga-operator/issues
 
 peers:
-  peer:
+  openfga:
     interface: openfga-peer
 
 provides:
