@@ -58,7 +58,7 @@ from ops import (
 from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent, RelationJoinedEvent
 from ops.jujuversion import JujuVersion
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, ModelError, WaitingStatus
 from ops.pebble import ChangeError, Error, ExecError, Layer
 
 from constants import (
@@ -135,12 +135,16 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # Tracing integration
-        self.tracing = TracingEndpointRequirer(
+        self.tracing_requirer = TracingEndpointRequirer(
             self,
             protocols=["otlp_grpc"],
         )
-        self.framework.observe(self.tracing.on.endpoint_changed, self._on_tracing_endpoint_changed)
-        self.framework.observe(self.tracing.on.endpoint_removed, self._on_tracing_endpoint_changed)
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_changed, self._on_tracing_endpoint_changed
+        )
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_removed, self._on_tracing_endpoint_changed
+        )
 
         # OpenFGA relation
         self.framework.observe(
@@ -288,9 +292,11 @@ class OpenFGAOperatorCharm(CharmBase):
             env_vars["OPENFGA_GRPC_TLS_CERT"] = str(SERVER_CERT)
             env_vars["OPENFGA_GRPC_TLS_KEY"] = str(SERVER_KEY)
 
-        if self.tracing.is_ready():
+        if self.tracing_requirer.is_ready():
             env_vars["OPENFGA_TRACE_ENABLED"] = "true"
-            env_vars["OPENFGA_TRACE_OTLP_ENDPOINT"] = self.tracing.get_endpoint("otlp_grpc")
+            env_vars["OPENFGA_TRACE_OTLP_ENDPOINT"] = self.tracing_requirer.get_endpoint(
+                "otlp_grpc"
+            )
             env_vars["OPENFGA_TRACE_SAMPLE_RATIO"] = "0.3"
 
         pebble_layer: LayerDict = {
@@ -300,7 +306,7 @@ class OpenFGAOperatorCharm(CharmBase):
                 SERVICE_NAME: {
                     "override": "merge",
                     "summary": "OpenFGA",
-                    "command": f"openfga run --log-format json --log-level {self._log_level}",
+                    "command": "openfga run",
                     "startup": "disabled",
                     "environment": env_vars,
                 }
@@ -586,10 +592,6 @@ class OpenFGAOperatorCharm(CharmBase):
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
         )
-
-    def _get_address(self, relation: Relation) -> str:
-        """Returns the ip address to be used with the specified relation."""
-        return self.model.get_binding(relation).network.ingress_address.exploded
 
     def _create_openfga_store(self, token: str, store_name: str) -> Optional[str]:
         logger.info("creating store: {}".format(store_name))
