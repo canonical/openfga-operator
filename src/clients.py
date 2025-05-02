@@ -3,9 +3,10 @@
 
 import logging
 from types import TracebackType
-from typing import Optional, Self, Type
+from typing import Optional, Type
 
 import requests
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 

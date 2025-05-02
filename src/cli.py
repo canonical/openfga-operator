@@ -8,9 +8,11 @@ from typing import Optional
 from ops import Container
 from ops.pebble import Error, ExecError
 
+from exceptions import MigrationError
+
 logger = logging.getLogger(__name__)
 
-VERSION_REGEX = re.compile(r"version:\s+(?P<version>v\d+\.\d+\.\d+)")
+VERSION_REGEX = re.compile(r"(?P<version>v\d+\.\d+\.\d+)")
 
 
 class CommandLine:
@@ -26,12 +28,12 @@ class CommandLine:
         cmd = ["openfga", "version"]
 
         try:
-            stdout = self._run_cmd(cmd)
+            _, stderr = self._run_cmd(cmd)
         except Error as err:
             logger.error("Failed to fetch the OpenFGA version: %s", err)
             return None
 
-        matched = VERSION_REGEX.search(stdout)
+        matched = VERSION_REGEX.search(stderr)
         return matched.group("version") if matched else None
 
     def migrate(self, dsn: str, timeout: float = 60) -> None:
@@ -52,20 +54,23 @@ class CommandLine:
             self._run_cmd(cmd, timeout=timeout)
         except Error as err:
             logger.error("Failed to migrate OpenFGA: %s", err)
-            raise
+            raise MigrationError from err
 
     def _run_cmd(
         self,
         cmd: list[str],
         timeout: float = 20,
         environment: Optional[dict] = None,
-    ) -> str:
+    ) -> tuple[str, str]:
         logger.debug(f"Running command: {cmd}")
         process = self.container.exec(cmd, environment=environment, timeout=timeout)
         try:
-            stdout, _ = process.wait_output()
+            stdout, stderr = process.wait_output()
         except ExecError as err:
             logger.error("Exited with code: %d. Error: %s", err.exit_code, err.stderr)
             raise
 
-        return stdout.decode() if isinstance(stdout, bytes) else stdout
+        return (
+            stdout.decode() if isinstance(stdout, bytes) else stdout,
+            stderr.decode() if isinstance(stderr, bytes) else stderr,
+        )

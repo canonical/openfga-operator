@@ -9,6 +9,8 @@ from ops.pebble import Layer, LayerDict
 
 from cli import CommandLine
 from constants import (
+    CA_BUNDLE_FILE,
+    OPENFGA_METRICS_HTTP_PORT,
     OPENFGA_SERVER_GRPC_PORT,
     OPENFGA_SERVER_HTTP_PORT,
     WORKLOAD_CONTAINER,
@@ -85,6 +87,11 @@ class WorkloadService:
 
         return workload_service.is_running()
 
+    def open_ports(self) -> None:
+        self._unit.open_port(protocol="tcp", port=OPENFGA_SERVER_HTTP_PORT)
+        self._unit.open_port(protocol="tcp", port=OPENFGA_SERVER_GRPC_PORT)
+        self._unit.open_port(protocol="tcp", port=OPENFGA_METRICS_HTTP_PORT)
+
 
 class PebbleService:
     """Pebble service abstraction running in a Juju unit."""
@@ -109,5 +116,13 @@ class PebbleService:
             **updated_env_vars,
         }
         self._layer_dict["services"][WORKLOAD_SERVICE]["environment"] = env_vars
+
+        if env_vars.get("OPENFGA_HTTP_TLS_ENABLED", False):
+            self._layer_dict["checks"]["http-check"]["http"]["url"] = (
+                f"https://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}/healthz"
+            )
+            self._layer_dict["checks"]["grpc-check"]["exec"]["command"] = (
+                f"grpc_health_probe -addr 127.0.0.1:{OPENFGA_SERVER_GRPC_PORT} -tls -tls-ca-cert {CA_BUNDLE_FILE}"
+            )
 
         return Layer(self._layer_dict)
