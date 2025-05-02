@@ -1,10 +1,11 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
+
 import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, KeysView, Optional, Self, Type, TypeAlias, Union
+from typing import Any, KeysView, Optional, Type, TypeAlias, Union
 from urllib.parse import urlparse
 
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
@@ -21,13 +22,14 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from ops import CharmBase, Model
 from ops.pebble import PathError
+from typing_extensions import Self
 
 from constants import (
     CA_BUNDLE_FILE,
     CERTIFICATES_INTEGRATION_NAME,
     CERTIFICATES_TRANSFER_INTEGRATION_NAME,
-    GRPC_INGRESS_RELATION_NAME,
-    HTTP_INGRESS_RELATION_NAME,
+    GRPC_INGRESS_INTEGRATION_NAME,
+    HTTP_INGRESS_INTEGRATION_NAME,
     OPENFGA_SERVER_GRPC_PORT,
     OPENFGA_SERVER_HTTP_PORT,
     PEER_INTEGRATION_NAME,
@@ -82,6 +84,7 @@ class DatabaseConfig:
     database: str = ""
     username: str = ""
     password: str = ""
+    migration_version: str = ""
 
     @property
     def dsn(self) -> str:
@@ -110,6 +113,7 @@ class DatabaseConfig:
             database=requirer.database,
             username=integration_data.get("username", ""),
             password=integration_data.get("password", ""),
+            migration_version=f"migration_version_{integration_id}",
         )
 
 
@@ -296,7 +300,7 @@ class HttpIngressIntegration:
         self._uri_scheme = charm._certs_integration.uri_scheme
         self.ingress_requirer = IngressPerAppRequirer(
             self._charm,
-            relation_name=HTTP_INGRESS_RELATION_NAME,
+            relation_name=HTTP_INGRESS_INTEGRATION_NAME,
             port=OPENFGA_SERVER_HTTP_PORT,
             strip_prefix=True,
         )
@@ -316,7 +320,7 @@ class GRpcIngressIntegration:
         self._uri_scheme = charm._certs_integration.uri_scheme
         self.ingress_requirer = IngressPerAppRequirer(
             self._charm,
-            relation_name=GRPC_INGRESS_RELATION_NAME,
+            relation_name=GRPC_INGRESS_INTEGRATION_NAME,
             port=OPENFGA_SERVER_GRPC_PORT,
             strip_prefix=True,
             scheme="h2c",
