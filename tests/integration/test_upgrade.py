@@ -23,7 +23,9 @@ APP_NAME = "openfga"
     "integrate with previous openfga version"
 )
 @pytest.mark.abort_on_fail
-async def test_upgrade_running_application(ops_test: OpsTest, charm: str, test_charm: str) -> None:
+async def test_upgrade_running_application(
+    ops_test: OpsTest, charm: str, tester_charm: str
+) -> None:
     """Deploy latest published charm and upgrade it with charm-under-test.
 
     Assert on the application status and health check endpoint after upgrade/refresh took place.
@@ -41,7 +43,7 @@ async def test_upgrade_running_application(ops_test: OpsTest, charm: str, test_c
             "postgresql-k8s", application_name="postgresql", channel="edge", trust=True
         ),
         ops_test.model.deploy(
-            test_charm,
+            tester_charm,
             application_name="openfga-requires",
             series="jammy",
         ),

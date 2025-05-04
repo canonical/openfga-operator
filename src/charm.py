@@ -297,7 +297,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         token = self.secrets[PRESHARED_TOKEN_SECRET_LABEL][PRESHARED_TOKEN_SECRET_KEY]
         with HTTPClient(
-            f"base_url={self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}",
+            base_url=f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}",
             auth_token=token,
         ) as client:
             if not (store_id := OpenFGAStore(client).create(store_name)):
