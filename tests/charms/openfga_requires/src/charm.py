@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-# Copyright 2022 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
-#
-# Learn more at: https://juju.is/docs/sdk
-
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-    https://discourse.charmhub.io/t/4208
-"""
 
 import logging
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -59,14 +48,11 @@ class OpenfgaRequiresCharm(CharmBase):
             event.defer()
             return
 
-        if info.store_id:
-            self.unit.status = ActiveStatus(
-                "running with store {}".format(
-                    info.store_id,
-                )
-            )
-        else:
+        if not info.store_id:
             self.unit.status = WaitingStatus("waiting for store information")
+            return
+
+        self.unit.status = ActiveStatus(f"running with store {info.store_id}")
 
     def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent) -> None:
         if not self.unit.is_leader():
@@ -79,10 +65,10 @@ class OpenfgaRequiresCharm(CharmBase):
             event.defer()
             return
 
-        logger.info("store id {}".format(info.store_id))
-        logger.info("token {}".format(info.token))
-        logger.info("grpc_api_url {}".format(info.grpc_api_url))
-        logger.info("http_api_url {}".format(info.http_api_url))
+        logger.info("OpenFGA store id: %s", info.store_id)
+        logger.info("OpenFGA token: %s", info.token)
+        logger.info("OpenFGA GRPC API url: %s", info.grpc_api_url)
+        logger.info("OpenFGA HTTP API url: %s", info.http_api_url)
 
         self._on_update_status(event)
 
@@ -91,27 +77,17 @@ class OpenfgaRequiresCharm(CharmBase):
         logger.info("Writing TLS certificate chain to directory `%s`", tls_cert_dir)
 
         tls_cert_dir.mkdir(mode=0o644, exist_ok=True)
-        for idx, cert in enumerate(event.chain):
-            (tls_cert_dir / f"cert-{idx}.crt").write_text(cert)
-
-        logger.info("Updating TLS certificates with `update-ca-certificates`")
-        try:
-            subprocess.check_output(
-                ["update-ca-certificates"],
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error("TLS certificate update failed: %s", e.stderr)
+        ca_cert = tls_cert_dir / "ca-certificates.crt"
+        ca_cert.write_text(event.ca)
 
         url = f"https://openfga.{self.model.name}.svc.cluster.local:8080/healthz"
         try:
-            response = requests.get(url, verify="/etc/ssl/certs/ca-certificates.crt", timeout=5)
+            response = requests.get(url, verify=str(ca_cert), timeout=5)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error("OpenFGA health request failed: %s", e)
             raise
 
 
-if __name__ == "__main__":  # pragma: nocover
+if __name__ == "__main__":
     main(OpenfgaRequiresCharm)

@@ -19,15 +19,19 @@ from conftest import (
     TRAEFIK_GRPC_APP,
     TRAEFIK_HTTP_APP,
     extract_certificate_common_name,
+    remove_integration,
 )
+from juju.application import Application
 from pytest_operator.plugin import OpsTest
+
+from constants import CERTIFICATES_INTEGRATION_NAME, DATABASE_INTEGRATION_NAME
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.mark.skip_if_deployed
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str) -> None:
+async def test_build_and_deploy(ops_test: OpsTest, charm: Path, tester_charm: str) -> None:
     await asyncio.gather(
         ops_test.model.deploy(
             DB_APP,
@@ -36,7 +40,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str)
             trust=True,
         ),
         ops_test.model.deploy(
-            test_charm,
+            tester_charm,
             application_name=OPENFGA_CLIENT_APP,
             series="jammy",
             trust=True,
@@ -170,6 +174,25 @@ async def test_scale_up(ops_test: OpsTest) -> None:
         status="active",
         timeout=5 * 60,
     )
+
+
+async def test_remove_database_integration(
+    ops_test: OpsTest, openfga_application: Application
+) -> None:
+    async with remove_integration(ops_test, DB_APP, DATABASE_INTEGRATION_NAME):
+        assert openfga_application.status == "blocked"
+
+
+async def test_remove_certificates_integration(
+    ops_test: OpsTest,
+    openfga_application: Application,
+    openfga_client_application: Application,
+) -> None:
+    async with remove_integration(
+        ops_test, CERTIFICATE_PROVIDER_APP, CERTIFICATES_INTEGRATION_NAME
+    ):
+        assert openfga_application.status == "active"
+        assert openfga_client_application.status == "active"
 
 
 async def test_scale_down(ops_test: OpsTest) -> None:
