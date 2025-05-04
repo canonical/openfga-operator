@@ -6,16 +6,17 @@ import logging
 import os
 import re
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Callable, Optional
+from typing import AsyncGenerator, Callable, Optional
 
 import pytest
 import pytest_asyncio
 import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from juju.application import Application
 from pytest_operator.plugin import OpsTest
-from utils import fetch_charm
 
 logger = logging.getLogger(__name__)
 
@@ -40,28 +41,32 @@ def extract_certificate_common_name(certificate: str) -> Optional[str]:
 
 
 @pytest_asyncio.fixture(scope="module")
-async def charm(ops_test: OpsTest) -> Path:
-    # in GitHub CI, charms are built with charmcraftcache and uploaded to $CHARM_PATH
-    charm = os.getenv("CHARM_PATH")
-    if not charm:
-        # fall back to build locally - required when run outside of GitHub CI
-        charm = await ops_test.build_charm(".")
-    return charm
+async def charm(ops_test: OpsTest) -> str | Path:
+    if charm := os.getenv("CHARM_PATH"):
+        return charm
+
+    logger.info("Building OpenFGA charm locally")
+    return await ops_test.build_charm(".")
 
 
 @pytest_asyncio.fixture(scope="module")
-async def test_charm(ops_test: OpsTest) -> Path:
-    logger.info("Building local test charm")
-    test_charm = await fetch_charm(ops_test, "*.charm", "./tests/charms/openfga_requires/")
-    return test_charm
+async def tester_charm(ops_test: OpsTest) -> Path:
+    if tester := next(Path("./tests/charms/openfga_requires").glob("*.charm"), None):
+        return tester
+
+    logger.info("Building OpenFGA tester charm locally")
+    return await ops_test.build_charm("./tests/charms/openfga_requires/")
 
 
 @pytest.fixture(scope="module", autouse=True)
 def copy_libraries_into_tester_charm() -> None:
-    """Ensure that the tester charm uses the current libraries."""
-    lib = Path("lib/charms/openfga_k8s/v1/openfga.py")
-    Path("tests/integration/openfga_requires", lib.parent).mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(lib.as_posix(), "tests/charms/openfga_requires/{}".format(lib.as_posix()))
+    src_lib_path = Path("lib/charms/openfga_k8s/v1/openfga.py")
+
+    dest_dir = Path("tests/charms/openfga_requires") / src_lib_path.parent
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_lib_path = dest_dir / src_lib_path.name
+
+    shutil.copyfile(src_lib_path, dest_lib_path)
 
 
 async def get_unit_data(ops_test: OpsTest, unit_name: str) -> dict:
@@ -152,3 +157,36 @@ async def grpc_ingress_netloc(grpc_ingress_integration_data: Optional[dict]) -> 
     assert matched is not None, "ingress netloc not found in grpc ingress integration data"
 
     return matched.group("netloc")
+
+
+@pytest.fixture
+def openfga_application(ops_test: OpsTest) -> Application:
+    return ops_test.model.applications[OPENFGA_APP]
+
+
+@pytest.fixture
+def openfga_client_application(ops_test: OpsTest) -> Application:
+    return ops_test.model.applications[OPENFGA_CLIENT_APP]
+
+
+@asynccontextmanager
+async def remove_integration(
+    ops_test: OpsTest, remote_app_name: str, integration_name: str
+) -> AsyncGenerator[None, None]:
+    remove_integration_cmd = (
+        f"remove-relation {OPENFGA_APP}:{integration_name} {remote_app_name}"
+    ).split()
+    await ops_test.juju(*remove_integration_cmd)
+    await ops_test.model.wait_for_idle(
+        apps=[remote_app_name],
+        status="active",
+    )
+
+    try:
+        yield
+    finally:
+        await ops_test.model.integrate(f"{OPENFGA_APP}:{integration_name}", remote_app_name)
+        await ops_test.model.wait_for_idle(
+            apps=[OPENFGA_APP, remote_app_name],
+            status="active",
+        )
