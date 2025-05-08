@@ -88,8 +88,6 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(self.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.start, self._on_start)
-        # self.framework.observe(self.on.stop, self._on_stop)
-        # self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
 
         # Database integration
@@ -207,10 +205,6 @@ class OpenFGAOperatorCharm(CharmBase):
         database_config = DatabaseConfig.load(self.database_requirer)
         return self.peer_data[database_config.migration_version] != self._workload_service.version
 
-    @property
-    def _uri_scheme(self) -> str:
-        return "https" if self._certs_integration.tls_enabled else "http"
-
     def _on_leader_elected(self, _: LeaderElectedEvent) -> None:
         if not self.secrets.is_ready:
             self.secrets[PRESHARED_TOKEN_SECRET_LABEL] = {
@@ -297,7 +291,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         token = self.secrets[PRESHARED_TOKEN_SECRET_LABEL][PRESHARED_TOKEN_SECRET_KEY]
         with HTTPClient(
-            base_url=f"{self._uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}",
+            base_url=f"{self._certs_integration.uri_scheme}://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}",
             auth_token=token,
         ) as client:
             if not (store_id := OpenFGAStore(client).create(store_name)):

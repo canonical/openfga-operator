@@ -1,13 +1,14 @@
-# Copyright 2022 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import os
 import pathlib
 import tempfile
 from typing import Generator
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, create_autospec
 
 import pytest
+from ops import Container, Unit, testing
 from ops.testing import ExecResult, Harness
 from pytest_mock import MockerFixture
 
@@ -29,7 +30,124 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
 
 
 @pytest.fixture
-def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, None, None]:
+def mocked_container() -> MagicMock:
+    return create_autospec(Container)
+
+
+@pytest.fixture
+def mocked_unit(mocked_container: MagicMock) -> MagicMock:
+    mocked = create_autospec(Unit)
+    mocked.get_container.return_value = mocked_container
+    return mocked
+
+
+@pytest.fixture
+def mocked_workload_service(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.WorkloadService", autospec=True)
+
+
+@pytest.fixture
+def mocked_workload_service_version(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch(
+        "charm.WorkloadService.version", new_callable=PropertyMock, return_value="1.0.0"
+    )
+
+
+@pytest.fixture
+def mocked_workload_service_running(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch(
+        "charm.WorkloadService.is_running", new_callable=PropertyMock, return_value=True
+    )
+
+
+@pytest.fixture
+def mocked_charm_holistic_handler(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.OpenFGAOperatorCharm._holistic_handler")
+
+
+@pytest.fixture
+def mocked_migration_needed(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch(
+        "charm.OpenFGAOperatorCharm.migration_needed", new_callable=PropertyMock, return_value=True
+    )
+
+
+@pytest.fixture
+def peer_integration() -> testing.Relation:
+    return testing.PeerRelation(
+        endpoint="peer",
+        interface="openfga-peer",
+    )
+
+
+@pytest.fixture
+def database_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="database",
+        interface="postgresql_client",
+        remote_app_name="postgresql-k8s",
+        remote_app_data={
+            "data": '{"database": "openfga", "extra-user-roles": "SUPERUSER"}',
+            "database": "database",
+            "endpoints": "endpoints",
+            "username": "username",
+            "password": "password",
+        },
+    )
+
+
+@pytest.fixture
+def http_ingress_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="http-ingress",
+        interface="ingress",
+        remote_app_name="traefik-http",
+        remote_app_data={"ingress": '{"url": "https://http.test.com"}'},
+    )
+
+
+@pytest.fixture
+def grpc_ingress_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="grpc-ingress",
+        interface="ingress",
+        remote_app_name="traefik-grpc",
+        remote_app_data={"ingress": '{"url": "https://grpc.test.com"}'},
+    )
+
+
+@pytest.fixture
+def openfga_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="openfga",
+        interface="openfga",
+        remote_app_name="openfga-client",
+        remote_app_data={
+            "store_name": "test-openfga-store",
+        },
+    )
+
+
+@pytest.fixture
+def certificates_transfer_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="send-ca-cert",
+        interface="certificate_transfer",
+        remote_app_name="openfga-client",
+    )
+
+
+@pytest.fixture
+def tracing_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="tracing",
+        interface="tracing",
+        remote_app_name="tempo-coordinator-k8s",
+    )
+
+
+@pytest.fixture
+def harness() -> Generator[Harness, None, None]:
     harness = Harness(OpenFGAOperatorCharm)
     harness.set_model_name("openfga-model")
     harness.add_oci_resource("oci-image")
@@ -43,13 +161,6 @@ def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, 
 
     harness.cleanup()
     tempdir.cleanup()
-
-
-@pytest.fixture
-def mocked_kubernetes_service_patcher(mocker: MockerFixture) -> MagicMock:
-    mocked_service_patcher = mocker.patch("charm.KubernetesServicePatch")
-    mocked_service_patcher.return_value = lambda x, y: None
-    return mocked_service_patcher
 
 
 @pytest.fixture
