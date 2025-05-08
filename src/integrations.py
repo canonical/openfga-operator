@@ -317,7 +317,6 @@ class HttpIngressIntegration:
 class GRpcIngressIntegration:
     def __init__(self, charm: CharmBase) -> None:
         self._charm = charm
-        self._uri_scheme = charm._certs_integration.uri_scheme
         self.ingress_requirer = IngressPerAppRequirer(
             self._charm,
             relation_name=GRPC_INGRESS_INTEGRATION_NAME,

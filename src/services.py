@@ -117,10 +117,12 @@ class PebbleService:
         }
         self._layer_dict["services"][WORKLOAD_SERVICE]["environment"] = env_vars
 
-        if env_vars.get("OPENFGA_HTTP_TLS_ENABLED", False):
+        if env_vars.get("OPENFGA_HTTP_TLS_ENABLED") == "true":
             self._layer_dict["checks"]["http-check"]["http"]["url"] = (
                 f"https://127.0.0.1:{OPENFGA_SERVER_HTTP_PORT}/healthz"
             )
+
+        if env_vars.get("OPENFGA_GRPC_TLS_ENABLED") == "true":
             self._layer_dict["checks"]["grpc-check"]["exec"]["command"] = (
                 f"grpc_health_probe -addr 127.0.0.1:{OPENFGA_SERVER_GRPC_PORT} -tls -tls-ca-cert {CA_BUNDLE_FILE}"
             )
