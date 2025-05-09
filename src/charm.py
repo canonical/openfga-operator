@@ -28,6 +28,12 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    K8sResourcePatchFailedEvent,
+    KubernetesComputeResourcesPatch,
+    ResourceRequirements,
+    adjust_resource_requirements,
+)
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
@@ -187,6 +193,16 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(
             self.on[CERTIFICATES_TRANSFER_INTEGRATION_NAME].relation_joined,
             self._on_certificates_transfer_relation_joined,
+        )
+
+        # resource patching
+        self.resources_patch = KubernetesComputeResourcesPatch(
+            self,
+            WORKLOAD_CONTAINER,
+            resource_reqs_func=self._resource_reqs_from_config,
+        )
+        self.framework.observe(
+            self.resources_patch.on.patch_failed, self._on_resource_patch_failed
         )
 
         port_http = ServicePort(
@@ -367,6 +383,10 @@ class OpenFGAOperatorCharm(CharmBase):
     def _on_leader_elected(self, event: LeaderElectedEvent) -> None:
         """Leader elected."""
         self._update_workload(event)
+
+    def _on_resource_patch_failed(self, event: K8sResourcePatchFailedEvent) -> None:
+        logger.error(f"Failed to patch resource constraints: {event.message}")
+        self.unit.status = BlockedStatus(event.message)
 
     @requires_state
     def _update_workload(self, event: HookEvent) -> None:
@@ -691,6 +711,11 @@ class OpenFGAOperatorCharm(CharmBase):
     def _get_http_url(self) -> str:
         k8s_svc = f"{self._uri_scheme}://{self.app.name}.{self.model.name}.svc.cluster.local:{OPENFGA_SERVER_HTTP_PORT}"
         return self.http_ingress.url or k8s_svc
+
+    def _resource_reqs_from_config(self) -> ResourceRequirements:
+        limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
+        requests = {"cpu": "100m", "memory": "200Mi"}
+        return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
 
 
 def map_config_to_env_vars(charm: CharmBase, **additional_env: str) -> dict:

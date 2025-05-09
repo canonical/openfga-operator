@@ -14,6 +14,20 @@ from pytest_mock import MockerFixture
 from charm import OpenFGAOperatorCharm
 
 
+@pytest.fixture(autouse=True)
+def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
+    mocker.patch(
+        "charms.observability_libs.v0.kubernetes_compute_resources_patch.ResourcePatcher",
+        autospec=True,
+    )
+    mocker.patch.multiple(
+        "charm.KubernetesComputeResourcesPatch",
+        _namespace="testing",
+        _patch=lambda *a, **kw: True,
+        is_ready=lambda *a, **kw: True,
+    )
+
+
 @pytest.fixture
 def harness(mocked_kubernetes_service_patcher: MagicMock) -> Generator[Harness, None, None]:
     harness = Harness(OpenFGAOperatorCharm)
