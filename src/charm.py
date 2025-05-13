@@ -15,6 +15,12 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    K8sResourcePatchFailedEvent,
+    KubernetesComputeResourcesPatch,
+    ResourceRequirements,
+    adjust_resource_requirements,
+)
 from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
@@ -182,6 +188,16 @@ class OpenFGAOperatorCharm(CharmBase):
             self.tracing_requirer.on.endpoint_removed, self._on_tracing_endpoint_changed
         )
 
+        # Resources patching
+        self.resources_patch = KubernetesComputeResourcesPatch(
+            self,
+            WORKLOAD_CONTAINER,
+            resource_reqs_func=self._resource_reqs_from_config,
+        )
+        self.framework.observe(
+            self.resources_patch.on.patch_failed, self._on_resource_patch_failed
+        )
+
         # Actions
         self.framework.observe(self.on.schema_upgrade_action, self._on_schema_upgrade_action)
 
@@ -335,6 +351,15 @@ class OpenFGAOperatorCharm(CharmBase):
 
     def _on_tracing_endpoint_changed(self, event: HookEvent) -> None:
         self._holistic_handler(event)
+
+    def _on_resource_patch_failed(self, event: K8sResourcePatchFailedEvent) -> None:
+        logger.error("Failed to patch resource constraints: %s", event.message)
+        self.unit.status = BlockedStatus(event.message)
+
+    def _resource_reqs_from_config(self) -> ResourceRequirements:
+        requests = {"cpu": "100m", "memory": "200Mi"}
+        limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
+        return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
 
     def _holistic_handler(self, event: HookEvent) -> None:
         if not container_connectivity(self):

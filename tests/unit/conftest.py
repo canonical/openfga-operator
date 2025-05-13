@@ -24,7 +24,7 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
     mocker.patch.multiple(
         "charm.KubernetesComputeResourcesPatch",
         _namespace="testing",
-        _patch=lambda *a, **kw: True,
+        _patch=lambda *a, **kw: None,
         is_ready=lambda *a, **kw: True,
     )
 
