@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.1](https://github.com/canonical/openfga-operator/compare/v1.5.0...v1.5.1) (2025-05-09)
+
+
+### Bug Fixes
+
+* add pod resource constraints ([9f8706a](https://github.com/canonical/openfga-operator/commit/9f8706a732c1eaa913fa879fc517ac7824df6abc))
+* fix constraint ([081c68c](https://github.com/canonical/openfga-operator/commit/081c68cabfa48939db0382a1fbc2201b9b9e6602))
+* fix the TIOBE analysis ([f47e67e](https://github.com/canonical/openfga-operator/commit/f47e67e63cecb490fd996f4c0f728f6ce5c40fc7))
+
 ## [1.5.0](https://github.com/canonical/openfga-operator/compare/v1.4.2...v1.5.0) (2025-04-08)
 
 
