@@ -69,6 +69,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str)
         ),
     )
 
+    await ops_test.model.integrate(f"{OPENFGA_APP}:openfga", f"{OPENFGA_CLIENT_APP}:openfga")
     await ops_test.model.integrate(OPENFGA_APP, f"{DB_APP}:database")
     await ops_test.model.integrate(f"{OPENFGA_APP}:grpc-ingress", TRAEFIK_GRPC_APP)
     await ops_test.model.integrate(f"{OPENFGA_APP}:http-ingress", TRAEFIK_HTTP_APP)
@@ -78,6 +79,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str)
             CERTIFICATE_PROVIDER_APP,
             DB_APP,
             OPENFGA_APP,
+            OPENFGA_CLIENT_APP,
             TRAEFIK_GRPC_APP,
             TRAEFIK_HTTP_APP,
         ],
@@ -87,14 +89,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, test_charm: str)
     )
 
 
-async def test_requirer_charm_integration(ops_test: OpsTest) -> None:
-    await ops_test.model.integrate(f"{OPENFGA_APP}:openfga", f"{OPENFGA_CLIENT_APP}:openfga")
-    await ops_test.model.wait_for_idle(
-        apps=[OPENFGA_CLIENT_APP, OPENFGA_APP],
-        status="active",
-        timeout=5 * 60,
-    )
-
+async def test_openfga_integration(ops_test: OpsTest) -> None:
     openfga_requires_unit = ops_test.model.applications[OPENFGA_CLIENT_APP].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
 
