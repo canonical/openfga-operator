@@ -77,7 +77,7 @@ from ops import (
 )
 from ops.charm import CharmEvents, RelationChangedEvent, RelationEvent
 from ops.framework import EventSource, Object
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field
 from typing_extensions import Self
 
 # The unique Charmhub library identifier, never change it
@@ -88,7 +88,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 2
+LIBPATCH = 3
 
 PYDEPS = ["pydantic ~= 2.0"]
 
@@ -155,14 +155,6 @@ class OpenfgaProviderAppData(DatabagModel):
     )
     grpc_api_url: str = Field(description="The openfga server GRPC address")
     http_api_url: str = Field(description="The openfga server HTTP address")
-
-    @field_validator("token_secret_id", mode="before")
-    @classmethod
-    def validate_token(cls, v: str, info: ValidationInfo) -> str:
-        """Validate token_secret_id arg."""
-        if not v and not info.data.get("token"):
-            raise ValueError("Invalid schema: neither token nor token_secret_id were defined")
-        return v
 
 
 class OpenFGAStoreCreateEvent(HookEvent):
