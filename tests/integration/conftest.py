@@ -126,6 +126,11 @@ async def certificate_integration_data(app_integration_data: Callable) -> Option
 
 
 @pytest_asyncio.fixture
+async def openfga_integration_data(app_integration_data: Callable) -> Optional[dict]:
+    return await app_integration_data(OPENFGA_CLIENT_APP, "openfga")
+
+
+@pytest_asyncio.fixture
 async def http_ingress_integration_data(app_integration_data: Callable) -> Optional[dict]:
     return await app_integration_data(OPENFGA_APP, "http-ingress")
 

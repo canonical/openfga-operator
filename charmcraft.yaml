@@ -27,6 +27,10 @@ links:
   source: https://github.com/canonical/openfga-operator
   issues: https://github.com/canonical/openfga-operator/issues
 
+assumes:
+  - juju >= 3.5
+  - k8s-api
+
 peers:
   peer:
     interface: openfga-peer

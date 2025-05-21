@@ -93,9 +93,17 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, tester_charm: st
     )
 
 
-async def test_openfga_integration(ops_test: OpsTest) -> None:
+async def test_openfga_integration(
+    ops_test: OpsTest, openfga_integration_data: Optional[dict]
+) -> None:
     openfga_requires_unit = ops_test.model.applications[OPENFGA_CLIENT_APP].units[0]
     assert "running with store" in openfga_requires_unit.workload_status_message
+
+    assert openfga_integration_data, "Openfga integration data is empty."
+    assert openfga_integration_data["store_id"]
+    assert openfga_integration_data["grpc_api_url"]
+    assert openfga_integration_data["http_api_url"]
+    assert openfga_integration_data["token_secret_id"]
 
 
 async def test_http_ingress_integration(http_ingress_netloc: Optional[str]) -> None:

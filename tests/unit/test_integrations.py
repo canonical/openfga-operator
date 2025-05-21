@@ -7,10 +7,10 @@ import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 
-from constants import OPENFGA_SERVER_HTTP_PORT, POSTGRESQL_DSN_TEMPLATE
+from constants import OPENFGA_SERVER_GRPC_PORT, OPENFGA_SERVER_HTTP_PORT, POSTGRESQL_DSN_TEMPLATE
 from integrations import (
     DatabaseConfig,
-    GRpcIngressIntegration,
+    GRPCIngressIntegration,
     HttpIngressIntegration,
     PeerData,
     TracingData,
@@ -237,7 +237,7 @@ class TestHttpIngressIntegration:
         )
 
 
-class TestGRpcIngressIntegration:
+class TestGRPCIngressIntegration:
     @pytest.fixture
     def mocked_requirer(self) -> MagicMock:
         return MagicMock()
@@ -255,7 +255,7 @@ class TestGRpcIngressIntegration:
         mocked_requirer.is_ready.return_value = True
         mocked_requirer.url = "https://grpc.test.com"
 
-        ingress = GRpcIngressIntegration(mocked_charm)
+        ingress = GRPCIngressIntegration(mocked_charm)
         ingress.ingress_requirer = mocked_requirer
 
         assert ingress.url == "https://grpc.test.com"
@@ -265,10 +265,10 @@ class TestGRpcIngressIntegration:
     ) -> None:
         mocked_requirer.is_ready.return_value = False
 
-        ingress = GRpcIngressIntegration(mocked_charm)
+        ingress = GRPCIngressIntegration(mocked_charm)
         ingress.ingress_requirer = mocked_requirer
 
         assert (
             ingress.url
-            == f"{mocked_charm.app.name}.{mocked_charm.model.name}.svc.cluster.local:{OPENFGA_SERVER_HTTP_PORT}"
+            == f"{mocked_charm.app.name}.{mocked_charm.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"
         )

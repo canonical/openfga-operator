@@ -30,7 +30,7 @@ class Secrets:
         except SecretNotFoundError:
             return None
 
-        return secret.get_content()
+        return secret.get_content(refresh=True)
 
     def __setitem__(self, label: str, content: dict[str, str]) -> None:
         if label not in self.LABELS:
@@ -46,7 +46,7 @@ class Secrets:
             except SecretNotFoundError:
                 return ValuesView({})
             else:
-                secret_contents[key] = secret.get_content()
+                secret_contents[key] = secret.get_content(refresh=True)
 
         return secret_contents.values()
 

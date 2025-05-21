@@ -314,7 +314,7 @@ class HttpIngressIntegration:
         return self.ingress_requirer.url if self.ingress_requirer.is_ready() else k8s_svc
 
 
-class GRpcIngressIntegration:
+class GRPCIngressIntegration:
     def __init__(self, charm: CharmBase) -> None:
         self._charm = charm
         self.ingress_requirer = IngressPerAppRequirer(
@@ -327,5 +327,5 @@ class GRpcIngressIntegration:
 
     @property
     def url(self) -> str:
-        k8s_svc = f"{self._charm.app.name}.{self._charm.model.name}.svc.cluster.local:{OPENFGA_SERVER_HTTP_PORT}"
+        k8s_svc = f"{self._charm.app.name}.{self._charm.model.name}.svc.cluster.local:{OPENFGA_SERVER_GRPC_PORT}"
         return self.ingress_requirer.url if self.ingress_requirer.is_ready() else k8s_svc

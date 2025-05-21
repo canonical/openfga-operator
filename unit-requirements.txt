@@ -2,6 +2,7 @@
 charmhelpers
 coverage[toml]
 cryptography
+lightkube
 jsonschema
 ops[testing]
 pytest

@@ -48,6 +48,7 @@ from configs import CharmConfig
 from constants import (
     CERTIFICATES_TRANSFER_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
+    DATABASE_NAME,
     GRAFANA_INTEGRATION_NAME,
     LOGGING_INTEGRATION_NAME,
     METRIC_INTEGRATION_NAME,
@@ -64,7 +65,7 @@ from integrations import (
     CertificatesIntegration,
     CertificatesTransferIntegration,
     DatabaseConfig,
-    GRpcIngressIntegration,
+    GRPCIngressIntegration,
     HttpIngressIntegration,
     PeerData,
     TracingData,
@@ -100,7 +101,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self.database_requirer = DatabaseRequires(
             self,
             relation_name=DATABASE_INTEGRATION_NAME,
-            database_name=f"{self.model.name}_{self.app.name}",
+            database_name=DATABASE_NAME,
         )
         self.framework.observe(
             self.database_requirer.on.database_created,
@@ -141,7 +142,7 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
         # GRPC ingress integration
-        self.grpc_ingress_integration = GRpcIngressIntegration(self)
+        self.grpc_ingress_integration = GRPCIngressIntegration(self)
         self.framework.observe(
             self.grpc_ingress_integration.ingress_requirer.on.ready,
             self._on_ingress_ready,
@@ -221,11 +222,13 @@ class OpenFGAOperatorCharm(CharmBase):
         database_config = DatabaseConfig.load(self.database_requirer)
         return self.peer_data[database_config.migration_version] != self._workload_service.version
 
-    def _on_leader_elected(self, _: LeaderElectedEvent) -> None:
+    def _on_leader_elected(self, event: LeaderElectedEvent) -> None:
         if not self.secrets.is_ready:
             self.secrets[PRESHARED_TOKEN_SECRET_LABEL] = {
                 PRESHARED_TOKEN_SECRET_KEY: token_urlsafe(32)
             }
+
+        self._holistic_handler(event)
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         self._holistic_handler(event)
@@ -297,6 +300,10 @@ class OpenFGAOperatorCharm(CharmBase):
 
         if not self.secrets.is_ready:
             logger.error("Missing required OpenFGA API token")
+            event.defer()
+            return
+
+        if not self.database_requirer.is_resource_created():
             event.defer()
             return
 

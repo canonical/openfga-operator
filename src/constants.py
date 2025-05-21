@@ -5,6 +5,7 @@ from pathlib import Path
 from string import Template
 
 # Charm constants
+DATABASE_NAME = "openfga"
 POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
 WORKLOAD_CONTAINER = "openfga"
 WORKLOAD_SERVICE = "openfga"

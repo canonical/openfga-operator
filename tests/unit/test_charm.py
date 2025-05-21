@@ -273,7 +273,7 @@ class TestHttpIngressRevokedEvent:
         mocked_charm_holistic_handler.assert_called_once()
 
 
-class TestGRpcIngressReadyEvent:
+class TestGRPCIngressReadyEvent:
     def test_when_event_emitted(
         self,
         grpc_ingress_integration: testing.Relation,
@@ -291,7 +291,7 @@ class TestGRpcIngressReadyEvent:
         mocked_charm_holistic_handler.assert_called_once()
 
 
-class TestGRpcIngressRevokedEvent:
+class TestGRPCIngressRevokedEvent:
     def test_when_event_emitted(
         self,
         grpc_ingress_integration: testing.Relation,
@@ -319,6 +319,7 @@ class TestOpenFGAStoreRequestEvent:
         self,
         mocked_secrets_cls: MagicMock,
         mocked_secret: MagicMock,
+        mocked_database_resource_created: MagicMock,
         mocked_workload_service_running: MagicMock,
         openfga_integration: testing.Relation,
     ) -> None:
@@ -345,10 +346,42 @@ class TestOpenFGAStoreRequestEvent:
         mocked_update_relation_info.assert_not_called()
 
     @patch("charm.Secrets", autospec=True)
+    def test_when_database_not_created(
+        self,
+        mocked_secrets_cls: MagicMock,
+        mocked_secret: MagicMock,
+        mocked_workload_service_running: MagicMock,
+        openfga_integration: testing.Relation,
+    ) -> None:
+        mocked_secret.is_ready = True
+        mocked_secrets_cls.return_value = mocked_secret
+
+        ctx = testing.Context(OpenFGAOperatorCharm)
+        container = testing.Container(WORKLOAD_CONTAINER, can_connect=True)
+        state_in = testing.State(
+            containers={container},
+            relations=[openfga_integration],
+            leader=True,
+        )
+
+        with (
+            patch("charm.DatabaseRequires.is_resource_created", return_value=False),
+            patch("charm.OpenFGAProvider.update_relation_info") as mocked_update_relation_info,
+            patch(
+                "charm.OpenFGAStore.create", return_value="store_id"
+            ) as mocked_openfga_store_create,
+        ):
+            ctx.run(ctx.on.relation_changed(openfga_integration), state_in)
+
+        mocked_openfga_store_create.assert_not_called()
+        mocked_update_relation_info.assert_not_called()
+
+    @patch("charm.Secrets", autospec=True)
     def test_when_workload_service_not_running(
         self,
         mocked_secrets_cls: MagicMock,
         mocked_secret: MagicMock,
+        mocked_database_resource_created: MagicMock,
         openfga_integration: testing.Relation,
     ) -> None:
         mocked_secret.is_ready = True
@@ -381,9 +414,9 @@ class TestOpenFGAStoreRequestEvent:
         self,
         mocked_secrets_cls: MagicMock,
         mocked_secret: MagicMock,
-        # mocked_openfga_store: MagicMock,
-        openfga_integration: testing.Relation,
+        mocked_database_resource_created: MagicMock,
         mocked_workload_service_running: MagicMock,
+        openfga_integration: testing.Relation,
     ) -> None:
         mocked_secret.is_ready = True
         mocked_secrets_cls.return_value = mocked_secret

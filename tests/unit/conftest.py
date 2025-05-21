@@ -61,6 +61,11 @@ def mocked_workload_service_running(mocker: MockerFixture) -> MagicMock:
 
 
 @pytest.fixture
+def mocked_database_resource_created(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.DatabaseRequires.is_resource_created", return_value=True)
+
+
+@pytest.fixture
 def mocked_charm_holistic_handler(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.OpenFGAOperatorCharm._holistic_handler")
 
