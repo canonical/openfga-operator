@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.2](https://github.com/canonical/openfga-operator/compare/v1.5.1...v1.5.2) (2025-05-22)
+
+
+### Bug Fixes
+
+* fix the issue when database integration is built after openfga integration ([f7fe707](https://github.com/canonical/openfga-operator/commit/f7fe70733c629bd010fcb4ad8a55b06c3c899672))
+* fix the issue when database integration is built after openfga integration ([c565b76](https://github.com/canonical/openfga-operator/commit/c565b7614abfff7cbe04e9dd3e09d496dcb56a56))
+
 ## [1.5.1](https://github.com/canonical/openfga-operator/compare/v1.5.0...v1.5.1) (2025-05-09)
 
 
