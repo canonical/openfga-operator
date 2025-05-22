@@ -578,6 +578,10 @@ class OpenFGAOperatorCharm(CharmBase):
             event.defer()
             return
 
+        if not self.database.is_resource_created():
+            event.defer()
+            return
+
         if not self._is_openfga_server_running():
             event.defer()
             return
