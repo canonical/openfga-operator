@@ -58,6 +58,7 @@ from constants import (
     PEER_INTEGRATION_NAME,
     PRESHARED_TOKEN_SECRET_KEY,
     PRESHARED_TOKEN_SECRET_LABEL,
+    SECRET_ID_KEY,
     WORKLOAD_CONTAINER,
 )
 from exceptions import MigrationError, PebbleServiceError
@@ -321,7 +322,8 @@ class OpenFGAOperatorCharm(CharmBase):
                 logger.error("Failed to create OpenFGA store %s", store_name)
                 return
 
-        token_secret_id = self.model.get_secret(label=PRESHARED_TOKEN_SECRET_LABEL).id
+        token_secret_id = self.secrets[PRESHARED_TOKEN_SECRET_LABEL][SECRET_ID_KEY]
+        self.model.get_secret(id=token_secret_id).grant(event.relation)
         self.openfga_provider.update_relation_info(
             store_id=store_id,
             http_api_url=self.http_ingress_integration.url,

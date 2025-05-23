@@ -8,6 +8,7 @@ from ops import Model, SecretNotFoundError
 from constants import (
     PRESHARED_TOKEN_SECRET_KEY,
     PRESHARED_TOKEN_SECRET_LABEL,
+    SECRET_ID_KEY,
 )
 from env_vars import EnvVars
 
@@ -36,7 +37,8 @@ class Secrets:
         if label not in self.LABELS:
             raise ValueError(f"Invalid label: '{label}'. Valid labels are: {self.LABELS}.")
 
-        self._model.app.add_secret(content, label=label)
+        secret = self._model.app.add_secret(content, label=label)
+        secret.set_content(content | {SECRET_ID_KEY: secret.id})
 
     def values(self) -> ValuesView:
         secret_contents = {}

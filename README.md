@@ -1,7 +1,7 @@
 # Charmed OpenFGA Operator
 
 [![CharmHub Badge](https://charmhub.io/openfga-k8s/badge.svg)](https://charmhub.io/openfga-k8s)
-[![Juju](https://img.shields.io/badge/Juju%20-3.0+-%23E95420)](https://github.com/juju/juju)
+[![Juju](https://img.shields.io/badge/Juju%20-3.5+-%23E95420)](https://github.com/juju/juju)
 [![License](https://img.shields.io/github/license/canonical/openfga-operator?label=License)](https://github.com/canonical/openfga-operator/blob/main/LICENSE)
 
 [![Continuous Integration Status](https://github.com/canonical/openfga-operator/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/canonical/openfga-operator/actions?query=branch%3Amain)

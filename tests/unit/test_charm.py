@@ -12,6 +12,7 @@ from constants import (
     PEER_INTEGRATION_NAME,
     PRESHARED_TOKEN_SECRET_KEY,
     PRESHARED_TOKEN_SECRET_LABEL,
+    SECRET_ID_KEY,
     WORKLOAD_CONTAINER,
 )
 
@@ -312,7 +313,11 @@ class TestGRPCIngressRevokedEvent:
 class TestOpenFGAStoreRequestEvent:
     @pytest.fixture
     def mocked_secret(self) -> MagicMock:
-        return MagicMock()
+        mocked = MagicMock()
+        mocked.__getitem__ = MagicMock(
+            return_value={SECRET_ID_KEY: "foo", PRESHARED_TOKEN_SECRET_KEY: "api_token"}
+        )
+        return mocked
 
     @patch("charm.Secrets", autospec=True)
     def test_when_secrets_not_ready(
@@ -421,8 +426,13 @@ class TestOpenFGAStoreRequestEvent:
         mocked_secret.is_ready = True
         mocked_secrets_cls.return_value = mocked_secret
         secret = testing.Secret(
-            tracked_content={PRESHARED_TOKEN_SECRET_KEY: "api_token"},
+            id="foo",
+            tracked_content={
+                SECRET_ID_KEY: "foo",
+                PRESHARED_TOKEN_SECRET_KEY: "api_token",
+            },
             label=PRESHARED_TOKEN_SECRET_LABEL,
+            owner="app",
         )
 
         ctx = testing.Context(OpenFGAOperatorCharm)

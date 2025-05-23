@@ -11,6 +11,7 @@ WORKLOAD_CONTAINER = "openfga"
 WORKLOAD_SERVICE = "openfga"
 PRESHARED_TOKEN_SECRET_KEY = "token"
 PRESHARED_TOKEN_SECRET_LABEL = "token"
+SECRET_ID_KEY = "secret-id"
 
 # Application constants
 OPENFGA_SERVER_HTTP_PORT = 8080
