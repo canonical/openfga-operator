@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.3](https://github.com/canonical/openfga-operator/compare/v1.5.2...v1.5.3) (2025-05-23)
+
+
+### Bug Fixes
+
+* fix the dependency required by k8s resource patch lib ([c2b61dd](https://github.com/canonical/openfga-operator/commit/c2b61ddbe7c63fa6d43ffec7bb53e529a903e1b5))
+* fix the dependency required by k8s resource patch lib ([2c54f05](https://github.com/canonical/openfga-operator/commit/2c54f058fd0f8fbc8556a5e9b0f87b36380758d3))
+
 ## [1.5.2](https://github.com/canonical/openfga-operator/compare/v1.5.1...v1.5.2) (2025-05-22)
 
 
