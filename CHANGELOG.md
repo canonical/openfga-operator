@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0](https://github.com/canonical/openfga-operator/compare/v1.5.3...v1.6.0) (2025-06-07)
+
+
+### Features
+
+* refactor integrations ([6e69707](https://github.com/canonical/openfga-operator/commit/6e697073fb1c31685aae6447be20934443e07a7c))
+* refactor openfga client and commandline ([923fd51](https://github.com/canonical/openfga-operator/commit/923fd51db86cbfab5fb971f52649f0915dc9a88c))
+* refactor workload and pebble services ([56d77e0](https://github.com/canonical/openfga-operator/commit/56d77e02a53c89657b92c2265c16aa4cbf497372))
+* upgrade database integration ([32d311f](https://github.com/canonical/openfga-operator/commit/32d311fe83056fe4bd108b2e420c679dfb30dff3))
+
+
+### Bug Fixes
+
+* add resource limits ([8ef8df1](https://github.com/canonical/openfga-operator/commit/8ef8df1e2afceeb153c66349248f44b7418a3cbb))
+* fix the secret id ([6e65091](https://github.com/canonical/openfga-operator/commit/6e650914d7d58cad1ab01180029265016918b794))
+
 ## [1.5.3](https://github.com/canonical/openfga-operator/compare/v1.5.2...v1.5.3) (2025-05-23)
 
 
