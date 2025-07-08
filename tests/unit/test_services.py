@@ -105,7 +105,7 @@ class TestPebbleService:
         mocked_container.add_layer.assert_called_once_with(
             WORKLOAD_SERVICE, mocked_layer, combine=True
         )
-        mocked_container.restart.assert_called_once()
+        mocked_container.replan.assert_called_once()
 
     @patch("ops.pebble.Layer")
     def test_plan_failure(
@@ -115,7 +115,7 @@ class TestPebbleService:
         pebble_service: PebbleService,
     ) -> None:
         with (
-            patch.object(mocked_container, "restart", side_effect=Exception) as restart,
+            patch.object(mocked_container, "replan", side_effect=Exception) as replan,
             pytest.raises(PebbleServiceError),
         ):
             pebble_service.plan(mocked_layer)
@@ -123,7 +123,7 @@ class TestPebbleService:
         mocked_container.add_layer.assert_called_once_with(
             WORKLOAD_SERVICE, mocked_layer, combine=True
         )
-        restart.assert_called_once()
+        replan.assert_called_once()
 
     @pytest.mark.parametrize(
         "env_sources, expected_env, expected_http_url, expected_grpc_cmd",
