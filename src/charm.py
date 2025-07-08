@@ -36,6 +36,7 @@ from ops import (
     LeaderElectedEvent,
     PebbleReadyEvent,
     StartEvent,
+    UpdateStatusEvent,
 )
 from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent, RelationJoinedEvent
 from ops.main import main
@@ -95,6 +96,7 @@ class OpenFGAOperatorCharm(CharmBase):
         self.framework.observe(self.on.openfga_pebble_ready, self._on_openfga_pebble_ready)
         self.framework.observe(self.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
 
@@ -232,6 +234,9 @@ class OpenFGAOperatorCharm(CharmBase):
         self._holistic_handler(event)
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_update_status(self, event: UpdateStatusEvent) -> None:
         self._holistic_handler(event)
 
     def _on_start(self, event: StartEvent) -> None:
