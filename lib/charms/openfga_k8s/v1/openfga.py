@@ -88,7 +88,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 3
+LIBPATCH = 4
 
 PYDEPS = ["pydantic ~= 2.0"]
 
@@ -148,9 +148,9 @@ class OpenfgaProviderAppData(DatabagModel):
     """Openfga requirer application databag model."""
 
     store_id: Optional[str] = Field(description="The store_id", default=None)
-    token: Optional[str] = Field(description="The token", default=None)
+    token: Optional[str] = Field(description="The API token", default=None, exclude=True)
     token_secret_id: Optional[str] = Field(
-        description="The juju secret_id which can be used to retrieve the token",
+        description="The juju secret_id which can be used to retrieve the API token",
         default=None,
     )
     grpc_api_url: str = Field(description="The openfga server GRPC address")
@@ -269,7 +269,7 @@ class OpenFGARequires(Object):
 
         if data.token_secret_id:
             token_secret = self.model.get_secret(id=data.token_secret_id)
-            token = token_secret.get_content()["token"]
+            token = token_secret.get_content().get("token")
             data.token = token
 
         return data
@@ -353,10 +353,9 @@ class OpenFGAProvider(Object):
     def update_relation_info(
         self,
         store_id: str,
+        token_secret_id: str,
         grpc_api_url: Optional[str] = None,
         http_api_url: Optional[str] = None,
-        token: Optional[str] = None,
-        token_secret_id: Optional[str] = None,
         relation_id: Optional[int] = None,
     ) -> None:
         """Update a relation databag."""
@@ -377,7 +376,6 @@ class OpenFGAProvider(Object):
             grpc_api_url=grpc_api_url,
             http_api_url=http_api_url,
             token_secret_id=token_secret_id,
-            token=token,
         )
 
         _update_relation_app_databag(
@@ -398,7 +396,6 @@ class OpenFGAProvider(Object):
 
             provider_data = OpenfgaProviderAppData(
                 store_id=relation_data.get("store_id"),
-                token=relation_data.get("token"),
                 token_secret_id=relation_data.get("token_secret_id"),
                 grpc_api_url=grpc_api_url or self._get_grpc_url(relation),
                 http_api_url=http_api_url or self._get_http_url(relation),

@@ -333,7 +333,6 @@ class OpenFGAOperatorCharm(CharmBase):
             store_id=store_id,
             http_api_url=self.http_ingress_integration.url,
             grpc_api_url=self.grpc_ingress_integration.url,
-            token=token,
             token_secret_id=token_secret_id,
             relation_id=event.relation.id,
         )

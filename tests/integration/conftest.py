@@ -52,7 +52,7 @@ async def charm(ops_test: OpsTest) -> str | Path:
 @pytest_asyncio.fixture(scope="module")
 async def tester_charm(ops_test: OpsTest) -> Path:
     if tester := next(Path("./tests/charms/openfga_requires").glob("*.charm"), None):
-        return tester
+        return tester.resolve()
 
     logger.info("Building OpenFGA tester charm locally")
     return await ops_test.build_charm("./tests/charms/openfga_requires/")
