@@ -38,7 +38,6 @@ peers:
 provides:
   openfga:
     interface: openfga
-    optional: true
   grafana-dashboard:
     interface: grafana_dashboard
     optional: true
