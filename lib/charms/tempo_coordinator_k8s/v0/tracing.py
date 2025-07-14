@@ -72,7 +72,6 @@ follows
 
 
 """  # noqa: W505
-
 import enum
 import json
 import logging
@@ -111,7 +110,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 7
+LIBPATCH =  9
 
 PYDEPS = ["pydantic"]
 
@@ -168,6 +167,10 @@ class ProtocolNotRequestedError(TracingError):
 
 class DataValidationError(TracingError):
     """Raised when data validation fails on IPU relation data."""
+
+
+class DataAccessPermissionError(TracingError):
+    """Raised when follower units attempt leader-only operations."""
 
 
 class AmbiguousRelationUsageError(TracingError):
@@ -380,7 +383,7 @@ class Receiver(BaseModel):
     )
 
 
-class TracingProviderAppData(DatabagModel):  # noqa: D101
+class TracingProviderAppData(DatabagModel):  # noqa: D101 # type: ignore
     """Application databag model for the tracing provider."""
 
     receivers: List[Receiver] = Field(
@@ -389,7 +392,7 @@ class TracingProviderAppData(DatabagModel):  # noqa: D101
     )
 
 
-class TracingRequirerAppData(DatabagModel):  # noqa: D101
+class TracingRequirerAppData(DatabagModel):  # noqa: D101 # type: ignore
     """Application databag model for the tracing requirer."""
 
     receivers: List[ReceiverProtocol]
@@ -780,7 +783,7 @@ class TracingEndpointRequirer(Object):
         self.framework.observe(events.relation_changed, self._on_tracing_relation_changed)
         self.framework.observe(events.relation_broken, self._on_tracing_relation_broken)
 
-        if protocols:
+        if protocols and self._charm.unit.is_leader():
             # we can't be sure that the current event context supports read/writing relation data for this relation,
             # so we catch ModelErrors. This is because we're doing this in init.
             try:
@@ -810,6 +813,8 @@ class TracingEndpointRequirer(Object):
                 TracingRequirerAppData(
                     receivers=list(protocols),
                 ).dump(relation.data[self._charm.app])
+        else:
+            raise DataAccessPermissionError("only leaders can request_protocols")
 
     @property
     def relations(self) -> List[Relation]:
@@ -834,7 +839,7 @@ class TracingEndpointRequirer(Object):
         """Is this endpoint ready?"""
         relation = relation or self._relation
         if not relation:
-            logger.debug(f"no relation on {self._relation_name!r}: tracing not ready")
+            logger.debug(f"no relation on {self._relation_name !r}: tracing not ready")
             return False
         if relation.data is None:
             logger.error(f"relation data is None for {relation}")
@@ -958,7 +963,15 @@ def charm_tracing_config(
     if not endpoint_requirer.is_ready():
         return None, None
 
-    endpoint = endpoint_requirer.get_endpoint("otlp_http")
+    try:
+        endpoint = endpoint_requirer.get_endpoint("otlp_http")
+    except ModelError as e:
+        if e.args[0] == "ERROR permission denied\n":
+            # this can happen the app databag doesn't have data,
+            # or we're breaking the relation.
+            return None, None
+        raise
+
     if not endpoint:
         return None, None
 
