@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.1](https://github.com/canonical/openfga-operator/compare/v1.6.0...v1.6.1) (2025-07-24)
+
+
+### Bug Fixes
+
+* do not pass api token in the openfga integration databag ([f6d287b](https://github.com/canonical/openfga-operator/commit/f6d287b9eee40b9c13bb91e9be1efa4373a41545))
+* do not pass api token in the openfga integration databag ([b6e2972](https://github.com/canonical/openfga-operator/commit/b6e2972cf030af0aea271c4cadea6451bec0d1cb))
+* don't restart service if config didn't change ([a704a0a](https://github.com/canonical/openfga-operator/commit/a704a0abf633bcb2607e08ac1a32e035d1730d15))
+* update charm dependent libs ([89e4401](https://github.com/canonical/openfga-operator/commit/89e4401dfc6b0146412cecede4db9f6bf13041d3))
+
 ## [1.6.0](https://github.com/canonical/openfga-operator/compare/v1.5.3...v1.6.0) (2025-06-07)
 
 
