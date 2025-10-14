@@ -7,7 +7,6 @@
 
 resource "juju_application" "openfga" {
   name        = var.app_name
-  model       = var.model_name
   trust       = true
   config      = var.config
   constraints = var.constraints
@@ -19,4 +18,5 @@ resource "juju_application" "openfga" {
     channel  = var.channel
     revision = var.revision
   }
+  model_uuid = var.model
 }
