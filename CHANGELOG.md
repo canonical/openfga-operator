@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/canonical/openfga-operator/compare/v1.6.1...v1.6.2) (2025-11-10)
+
+
+### Bug Fixes
+
+* upgrade tf module to use 1.0.0 syntax ([c2bb38b](https://github.com/canonical/openfga-operator/commit/c2bb38bc9e0238b16e70938ba098aee821892ae8))
+
 ## [1.6.1](https://github.com/canonical/openfga-operator/compare/v1.6.0...v1.6.1) (2025-07-24)
 
 
