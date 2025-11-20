@@ -21,7 +21,12 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
-from charms.openfga_k8s.v1.openfga import OpenFGAProvider, OpenFGAStoreRequestEvent
+from charms.openfga_k8s.v1.openfga import (
+    OpenFGAProvider,
+    OpenfgaProviderAppData,
+    OpenfgaProviderBaseData,
+    OpenFGAStoreRequestEvent,
+)
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.tls_certificates_interface.v4.tls_certificates import CertificateAvailableEvent
@@ -328,12 +333,13 @@ class OpenFGAOperatorCharm(CharmBase):
                 return
 
         token_secret_id = self.secrets[PRESHARED_TOKEN_SECRET_LABEL][SECRET_ID_KEY]
-        self.model.get_secret(id=token_secret_id).grant(event.relation)
-        self.openfga_provider.update_relation_info(
-            store_id=store_id,
-            http_api_url=self.http_ingress_integration.url,
-            grpc_api_url=self.grpc_ingress_integration.url,
-            token_secret_id=token_secret_id,
+        self.openfga_provider.update_relation_app_data(
+            data=OpenfgaProviderAppData(
+                store_id=store_id,
+                token_secret_id=token_secret_id,
+                http_api_url=self.http_ingress_integration.url,
+                grpc_api_url=self.grpc_ingress_integration.url,
+            ),
             relation_id=event.relation.id,
         )
 
@@ -418,9 +424,11 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self.unit.status = ActiveStatus()
 
-        self.openfga_provider.update_server_info(
-            http_api_url=self.http_ingress_integration.url,
-            grpc_api_url=self.grpc_ingress_integration.url,
+        self.openfga_provider.update_relations_app_data(
+            OpenfgaProviderBaseData(
+                grpc_api_url=self.grpc_ingress_integration.url,
+                http_api_url=self.http_ingress_integration.url,
+            )
         )
 
     def _on_schema_upgrade_action(self, event: ActionEvent) -> None:
