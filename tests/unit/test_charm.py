@@ -340,7 +340,9 @@ class TestOpenFGAStoreRequestEvent:
         )
 
         with (
-            patch("charm.OpenFGAProvider.update_relation_info") as mocked_update_relation_info,
+            patch(
+                "charm.OpenFGAProvider.update_relation_app_data"
+            ) as mocked_update_relation_app_data,
             patch(
                 "charm.OpenFGAStore.create", return_value="store_id"
             ) as mocked_openfga_store_create,
@@ -348,7 +350,7 @@ class TestOpenFGAStoreRequestEvent:
             ctx.run(ctx.on.relation_changed(openfga_integration), state_in)
 
         mocked_openfga_store_create.assert_not_called()
-        mocked_update_relation_info.assert_not_called()
+        mocked_update_relation_app_data.assert_not_called()
 
     @patch("charm.Secrets", autospec=True)
     def test_when_database_not_created(
@@ -371,7 +373,9 @@ class TestOpenFGAStoreRequestEvent:
 
         with (
             patch("charm.DatabaseRequires.is_resource_created", return_value=False),
-            patch("charm.OpenFGAProvider.update_relation_info") as mocked_update_relation_info,
+            patch(
+                "charm.OpenFGAProvider.update_relation_app_data"
+            ) as mocked_update_relation_app_data,
             patch(
                 "charm.OpenFGAStore.create", return_value="store_id"
             ) as mocked_openfga_store_create,
@@ -379,7 +383,7 @@ class TestOpenFGAStoreRequestEvent:
             ctx.run(ctx.on.relation_changed(openfga_integration), state_in)
 
         mocked_openfga_store_create.assert_not_called()
-        mocked_update_relation_info.assert_not_called()
+        mocked_update_relation_app_data.assert_not_called()
 
     @patch("charm.Secrets", autospec=True)
     def test_when_workload_service_not_running(
@@ -404,7 +408,9 @@ class TestOpenFGAStoreRequestEvent:
             patch(
                 "charm.WorkloadService.is_running", new_callable=PropertyMock, return_value=False
             ),
-            patch("charm.OpenFGAProvider.update_relation_info") as mocked_update_relation_info,
+            patch(
+                "charm.OpenFGAProvider.update_relation_app_data"
+            ) as mocked_update_relation_app_data,
             patch(
                 "charm.OpenFGAStore.create", return_value="store_id"
             ) as mocked_openfga_store_create,
@@ -412,7 +418,7 @@ class TestOpenFGAStoreRequestEvent:
             ctx.run(ctx.on.relation_changed(openfga_integration), state_in)
 
         mocked_openfga_store_create.assert_not_called()
-        mocked_update_relation_info.assert_not_called()
+        mocked_update_relation_app_data.assert_not_called()
 
     @patch("charm.Secrets", autospec=True)
     def test_when_event_emitted(
@@ -445,7 +451,9 @@ class TestOpenFGAStoreRequestEvent:
         )
 
         with (
-            patch("charm.OpenFGAProvider.update_relation_info") as mocked_update_relation_info,
+            patch(
+                "charm.OpenFGAProvider.update_relation_app_data"
+            ) as mocked_update_relation_app_data,
             patch(
                 "charm.OpenFGAStore.create", return_value="store_id"
             ) as mocked_openfga_store_create,
@@ -453,7 +461,7 @@ class TestOpenFGAStoreRequestEvent:
             ctx.run(ctx.on.relation_changed(openfga_integration), state_in)
 
         mocked_openfga_store_create.assert_called_once()
-        mocked_update_relation_info.assert_called_once()
+        mocked_update_relation_app_data.assert_called_once()
 
 
 class TestCertificatesTransferRelationJoinedEvent:
