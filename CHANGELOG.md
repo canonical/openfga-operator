@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/canonical/openfga-operator/compare/v1.6.2...v1.6.3) (2025-11-21)
+
+
+### Bug Fixes
+
+* update juju-tf version to ~&gt; 1.0.0 ([07ecdd9](https://github.com/canonical/openfga-operator/commit/07ecdd99c37328123be4f6bcd9510aa5c5e429ad))
+
 ## [1.6.2](https://github.com/canonical/openfga-operator/compare/v1.6.1...v1.6.2) (2025-11-10)
 
 
