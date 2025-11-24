@@ -26,7 +26,7 @@ PEBBLE_LAYER_DICT = {
     "description": "pebble layer for openfga",
     "services": {
         WORKLOAD_SERVICE: {
-            "override": "merge",
+            "override": "replace",
             "summary": "entrypoint of the openfga image",
             "command": "openfga run",
             "startup": "disabled",
