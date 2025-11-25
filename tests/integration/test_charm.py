@@ -19,6 +19,7 @@ from conftest import (
     TRAEFIK_GRPC_APP,
     TRAEFIK_HTTP_APP,
     extract_certificate_common_name,
+    get_app_integration_data,
     remove_integration,
 )
 from juju.application import Application
@@ -38,6 +39,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, tester_charm: st
             application_name=DB_APP,
             channel="14/stable",
             trust=True,
+            num_units=2,
         ),
         ops_test.model.deploy(
             tester_charm,
@@ -90,6 +92,33 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, tester_charm: st
         raise_on_error=False,
         status="active",
         timeout=10 * 60,
+    )
+
+
+async def test_database_integration(
+    ops_test: OpsTest, database_integration_data: Optional[dict]
+) -> None:
+    assert database_integration_data, "Database integration data is empty."
+    assert database_integration_data["endpoints"]
+    assert database_integration_data["read-only-endpoints"], "Read-only endpoints missing."
+
+    # Scale down the database to one Juju unit
+    db_app = ops_test.model.applications[DB_APP]
+    await db_app.scale(1)
+
+    await ops_test.model.wait_for_idle(
+        apps=[DB_APP, OPENFGA_APP],
+        status="active",
+        timeout=5 * 60,
+    )
+
+    database_integration_data = await get_app_integration_data(
+        ops_test, OPENFGA_APP, DATABASE_INTEGRATION_NAME
+    )
+    assert database_integration_data, "Database integration data is empty."
+    assert database_integration_data["endpoints"]
+    assert "read-only-endpoints" not in database_integration_data, (
+        "Read-only endpoints should be empty."
     )
 
 
