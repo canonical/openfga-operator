@@ -444,8 +444,8 @@ class OpenFGAOperatorCharm(CharmBase):
             event.fail("Cannot connect to the workload container")
             return
 
-        if not self._workload_service.is_running:
-            event.fail("Service is not ready. Please re-run the action when the charm is active")
+        if not peer_integration_exists(self):
+            event.fail("Peer integration is not ready")
             return
 
         event.log("Start migrating the database")

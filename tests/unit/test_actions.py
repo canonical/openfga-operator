@@ -26,12 +26,16 @@ class TestSchemaUpgradeAction:
     def test_when_container_not_connected(
         self,
         mocked_cli: MagicMock,
-        mocked_workload_service_running: MagicMock,
+        peer_integration: testing.PeerRelation,
         mocked_charm_holistic_handler: MagicMock,
     ) -> None:
         ctx = testing.Context(OpenFGAOperatorCharm)
         container = testing.Container(WORKLOAD_CONTAINER, can_connect=False)
-        state_in = testing.State(containers={container})
+        state_in = testing.State(
+            containers={container},
+            relations=[peer_integration],
+            leader=True,
+        )
 
         with pytest.raises(testing.ActionFailed, match="Cannot connect to the workload container"):
             ctx.run(ctx.on.action(name="schema-upgrade"), state_in)
@@ -40,19 +44,16 @@ class TestSchemaUpgradeAction:
         mocked_charm_holistic_handler.assert_not_called()
 
     @patch("charm.CommandLine.migrate")
-    def test_when_workload_service_not_running(
+    def test_when_peer_integration_not_exists(
         self,
         mocked_cli: MagicMock,
-        mocked_workload_service_running: MagicMock,
         mocked_charm_holistic_handler: MagicMock,
     ) -> None:
-        mocked_workload_service_running.return_value = False
-
         ctx = testing.Context(OpenFGAOperatorCharm)
         container = testing.Container(WORKLOAD_CONTAINER, can_connect=True)
-        state_in = testing.State(containers={container})
+        state_in = testing.State(containers={container}, leader=True)
 
-        with pytest.raises(testing.ActionFailed, match="Service is not ready"):
+        with pytest.raises(testing.ActionFailed, match="Peer integration is not ready"):
             ctx.run(ctx.on.action(name="schema-upgrade"), state_in)
 
         mocked_cli.assert_not_called()
@@ -63,12 +64,16 @@ class TestSchemaUpgradeAction:
         self,
         mocked_cli: MagicMock,
         mocked_database_config: DatabaseConfig,
-        mocked_workload_service_running: MagicMock,
+        peer_integration: testing.Relation,
         mocked_charm_holistic_handler: MagicMock,
     ) -> None:
         ctx = testing.Context(OpenFGAOperatorCharm)
         container = testing.Container(WORKLOAD_CONTAINER, can_connect=True)
-        state_in = testing.State(containers={container})
+        state_in = testing.State(
+            containers={container},
+            relations=[peer_integration],
+            leader=True,
+        )
 
         with pytest.raises(testing.ActionFailed, match="Database migration failed"):
             ctx.run(ctx.on.action(name="schema-upgrade"), state_in)
@@ -81,12 +86,16 @@ class TestSchemaUpgradeAction:
         self,
         mocked_cli: MagicMock,
         mocked_database_config: DatabaseConfig,
-        mocked_workload_service_running: MagicMock,
+        peer_integration: testing.Relation,
         mocked_charm_holistic_handler: MagicMock,
     ) -> None:
         ctx = testing.Context(OpenFGAOperatorCharm)
         container = testing.Container(WORKLOAD_CONTAINER, can_connect=True)
-        state_in = testing.State(containers={container})
+        state_in = testing.State(
+            containers={container},
+            relations=[peer_integration],
+            leader=True,
+        )
 
         ctx.run(ctx.on.action(name="schema-upgrade"), state_in)
 
