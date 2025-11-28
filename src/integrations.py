@@ -81,6 +81,7 @@ class DatabaseConfig:
     """The data source from the database integration."""
 
     endpoint: str = ""
+    read_only_endpoint: str = ""
     database: str = ""
     username: str = ""
     password: str = ""
@@ -95,10 +96,27 @@ class DatabaseConfig:
             database=self.database,
         )
 
+    @property
+    def read_only_dsn(self) -> str:
+        if not self.read_only_endpoint:
+            return ""
+
+        return POSTGRESQL_DSN_TEMPLATE.substitute(
+            username=self.username,
+            password=self.password,
+            endpoint=self.read_only_endpoint,
+            database=self.database,
+        )
+
     def to_env_vars(self) -> EnvVars:
-        return {
+        env = {
             "OPENFGA_DATASTORE_URI": self.dsn,
         }
+
+        if self.read_only_dsn:
+            env["OPENFGA_DATASTORE_SECONDARY_URI"] = self.read_only_dsn
+
+        return env
 
     @classmethod
     def load(cls, requirer: DatabaseRequires) -> Self:
@@ -110,6 +128,7 @@ class DatabaseConfig:
 
         return cls(
             endpoint=integration_data.get("endpoints", "").split(",")[0],
+            read_only_endpoint=integration_data.get("read-only-endpoints", "").split(",")[0],
             database=requirer.database,
             username=integration_data.get("username", ""),
             password=integration_data.get("password", ""),

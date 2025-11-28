@@ -11,6 +11,7 @@ from typing import Any
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
+    DatabaseReadOnlyEndpointsChangedEvent,
     DatabaseRequires,
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
@@ -40,10 +41,11 @@ from ops import (
     HookEvent,
     LeaderElectedEvent,
     PebbleReadyEvent,
+    RelationBrokenEvent,
     StartEvent,
     UpdateStatusEvent,
 )
-from ops.charm import CharmBase, RelationChangedEvent, RelationDepartedEvent, RelationJoinedEvent
+from ops.charm import CharmBase, RelationChangedEvent, RelationJoinedEvent
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error, Layer
@@ -120,7 +122,11 @@ class OpenFGAOperatorCharm(CharmBase):
             self._on_database_changed,
         )
         self.framework.observe(
-            self.on.database_relation_broken,
+            self.database_requirer.on.read_only_endpoints_changed,
+            self._on_database_changed,
+        )
+        self.framework.observe(
+            self.on[DATABASE_INTEGRATION_NAME].relation_broken,
             self._on_database_relation_broken,
         )
 
@@ -298,10 +304,12 @@ class OpenFGAOperatorCharm(CharmBase):
 
         self._holistic_handler(event)
 
-    def _on_database_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
+    def _on_database_changed(
+        self, event: DatabaseEndpointsChangedEvent | DatabaseReadOnlyEndpointsChangedEvent
+    ) -> None:
         self._holistic_handler(event)
 
-    def _on_database_relation_broken(self, event: RelationDepartedEvent) -> None:
+    def _on_database_relation_broken(self, event: RelationBrokenEvent) -> None:
         self._holistic_handler(event)
 
     @leader_unit
@@ -432,12 +440,16 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
     def _on_schema_upgrade_action(self, event: ActionEvent) -> None:
+        if not self.unit.is_leader():
+            event.fail("Only the leader unit can run the schema-upgrade action")
+            return
+
         if not container_connectivity(self):
             event.fail("Cannot connect to the workload container")
             return
 
-        if not self._workload_service.is_running:
-            event.fail("Service is not ready. Please re-run the action when the charm is active")
+        if not peer_integration_exists(self):
+            event.fail("Peer integration is not ready")
             return
 
         event.log("Start migrating the database")

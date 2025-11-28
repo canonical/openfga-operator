@@ -121,6 +121,11 @@ async def unit_integration_data(ops_test: OpsTest) -> Callable:
 
 
 @pytest_asyncio.fixture
+async def database_integration_data(app_integration_data: Callable) -> Optional[dict]:
+    return await app_integration_data(OPENFGA_APP, "database")
+
+
+@pytest_asyncio.fixture
 async def certificate_integration_data(app_integration_data: Callable) -> Optional[dict]:
     return await app_integration_data(OPENFGA_APP, "certificates")
 
