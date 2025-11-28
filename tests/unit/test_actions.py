@@ -23,6 +23,29 @@ class TestSchemaUpgradeAction:
         return mocked.return_value
 
     @patch("charm.CommandLine.migrate")
+    def test_when_not_leader_unit(
+        self,
+        mocked_cli: MagicMock,
+        peer_integration: testing.PeerRelation,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(OpenFGAOperatorCharm)
+        container = testing.Container(WORKLOAD_CONTAINER, can_connect=False)
+        state_in = testing.State(
+            containers={container},
+            relations=[peer_integration],
+            leader=False,
+        )
+
+        with pytest.raises(
+            testing.ActionFailed, match="Only the leader unit can run the schema-upgrade action"
+        ):
+            ctx.run(ctx.on.action(name="schema-upgrade"), state_in)
+
+        mocked_cli.assert_not_called()
+        mocked_charm_holistic_handler.assert_not_called()
+
+    @patch("charm.CommandLine.migrate")
     def test_when_container_not_connected(
         self,
         mocked_cli: MagicMock,

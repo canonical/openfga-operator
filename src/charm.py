@@ -440,6 +440,10 @@ class OpenFGAOperatorCharm(CharmBase):
         )
 
     def _on_schema_upgrade_action(self, event: ActionEvent) -> None:
+        if not self.unit.is_leader():
+            event.fail("Only the leader unit can run the schema-upgrade action")
+            return
+
         if not container_connectivity(self):
             event.fail("Cannot connect to the workload container")
             return
