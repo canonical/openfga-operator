@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.3](https://github.com/canonical/openfga-operator/compare/v1.6.2...v1.6.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* don't check service is running in schema-upgrade action ([d32b830](https://github.com/canonical/openfga-operator/commit/d32b830276a5f3270a30c2e6d86c00b65353a38a))
+* enable the read & write split in OpenFGA ([78f30ad](https://github.com/canonical/openfga-operator/commit/78f30ad6c35b8d2febc225a396691f89ffa45ffb))
+* only leader unit can run the migration action ([4e05ace](https://github.com/canonical/openfga-operator/commit/4e05ace5ac62cb70ca147376f4985d5709ab3e8d))
+* update juju-tf version to ~&gt; 1.0.0 ([07ecdd9](https://github.com/canonical/openfga-operator/commit/07ecdd99c37328123be4f6bcd9510aa5c5e429ad))
+* update the lib public interfaces and remove unnecessary code ([8f6810f](https://github.com/canonical/openfga-operator/commit/8f6810fb48f2589236faac41ccc82bb8abcf6f38))
+
 ## [1.6.2](https://github.com/canonical/openfga-operator/compare/v1.6.1...v1.6.2) (2025-11-10)
 
 
