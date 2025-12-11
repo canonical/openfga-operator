@@ -39,7 +39,6 @@ async def test_build_and_deploy(ops_test: OpsTest, charm: Path, tester_charm: st
             application_name=DB_APP,
             channel="14/stable",
             trust=True,
-            num_units=2,
         ),
         ops_test.model.deploy(
             tester_charm,
@@ -100,16 +99,18 @@ async def test_database_integration(
 ) -> None:
     assert database_integration_data, "Database integration data is empty."
     assert database_integration_data["endpoints"]
-    assert database_integration_data["read-only-endpoints"], "Read-only endpoints missing."
+    assert "read-only-endpoints" not in database_integration_data, (
+        "Read-only endpoints should be empty."
+    )
 
-    # Scale down the database to one Juju unit
+    # Scale up the database
     db_app = ops_test.model.applications[DB_APP]
-    await db_app.scale(1)
+    await db_app.scale(2)
 
     await ops_test.model.wait_for_idle(
         apps=[DB_APP, OPENFGA_APP],
         status="active",
-        timeout=5 * 60,
+        timeout=10 * 60,
     )
 
     database_integration_data = await get_app_integration_data(
@@ -117,9 +118,7 @@ async def test_database_integration(
     )
     assert database_integration_data, "Database integration data is empty."
     assert database_integration_data["endpoints"]
-    assert "read-only-endpoints" not in database_integration_data, (
-        "Read-only endpoints should be empty."
-    )
+    assert database_integration_data["read-only-endpoints"], "Read-only endpoints missing."
 
 
 async def test_openfga_integration(
