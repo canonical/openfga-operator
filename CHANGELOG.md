@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.4](https://github.com/canonical/openfga-operator/compare/v1.6.3...v1.6.4) (2025-12-12)
+
+
+### Bug Fixes
+
+* fix the postgresql HA deployment in the integration tests ([32bdf88](https://github.com/canonical/openfga-operator/commit/32bdf88591ecc2f9a198c4b8c2ea87b96560577e))
+* upgrade the image to v1.10.1 ([a572202](https://github.com/canonical/openfga-operator/commit/a5722022642a182279ea34bd32e7d7cdc00a0b82))
+* upgrade the image to v1.10.1 ([#343](https://github.com/canonical/openfga-operator/issues/343)) ([1731201](https://github.com/canonical/openfga-operator/commit/173120133427c893f0b4f4e2a2882a4984e9b3bc))
+
 ## [1.6.3](https://github.com/canonical/openfga-operator/compare/v1.6.2...v1.6.3) (2025-12-02)
 
 
