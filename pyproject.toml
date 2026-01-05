@@ -11,6 +11,9 @@ show_missing = true
 [tool.pytest.ini_options]
 minversion = "6.0"
 log_cli_level = "INFO"
+markers = [
+    "upgrade: charm upgrade related test cases",
+]
 
 # Linting and formatting tools configuration
 [tool.codespell]
@@ -68,7 +71,7 @@ convention = "google"
 
 [tool.mypy]
 pretty = true
-mypy_path = "./src:./lib/:./tests/integration"
+mypy_path = "./src:./lib/"
 # Exclude non-openfga libraries
 exclude = 'lib/charms/((?!openfga_k8s).)'
 follow_imports = "silent"
@@ -85,5 +88,5 @@ disallow_untyped_defs = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
-module = ["ops.*", "pytest.*", "pytest_operator.*", "urllib3.*", "jinja2.*", "lightkube.*", "pytest_mock.*"]
+module = ["ops.*", "pytest.*", "urllib3.*", "jinja2.*", "lightkube.*", "pytest_mock.*"]
 ignore_missing_imports = true

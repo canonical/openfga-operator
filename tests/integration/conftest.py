@@ -1,64 +1,130 @@
-# Copyright 2024 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import functools
 import logging
 import os
-import re
+import secrets
 import shutil
-from contextlib import asynccontextmanager
+import subprocess
+from collections.abc import Iterator
 from pathlib import Path
-from typing import AsyncGenerator, Callable, Optional
+from typing import Callable
 
+import jubilant
 import pytest
-import pytest_asyncio
-import yaml
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from juju.application import Application
-from pytest_operator.plugin import OpsTest
+import requests
+
+from tests.integration.util import (
+    INGRESS_URL_REGEX,
+    OPENFGA_APP,
+    OPENFGA_CLIENT_APP,
+    get_app_integration_data,
+    juju_model_factory,
+)
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-CERTIFICATE_PROVIDER_APP = "self-signed-certificates"
-DB_APP = "postgresql-k8s"
-OPENFGA_CLIENT_APP = "openfga-client"
-OPENFGA_APP = "openfga"
-TRAEFIK_CHARM = "traefik-k8s"
-TRAEFIK_GRPC_APP = "traefik-grpc"
-TRAEFIK_HTTP_APP = "traefik-http"
-INGRESS_URL_REGEX = re.compile(r'"url":\s*"https?://(?P<netloc>[^/]+)')
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--model",
+        action="store",
+        default=None,
+        help="The model to run the tests on.",
+    )
+    parser.addoption(
+        "--no-setup",
+        action="store_true",
+        default=False,
+        help='Skip tests marked with "setup".',
+    )
+    parser.addoption(
+        "--no-teardown",
+        action="store_true",
+        default=False,
+        help='Skip tests marked with "teardown".',
+    )
 
 
-def extract_certificate_common_name(certificate: str) -> Optional[str]:
-    cert_data = certificate.encode()
-    cert = x509.load_pem_x509_certificate(cert_data, default_backend())
-    if not (rdns := cert.subject.rdns):
-        return None
-
-    return rdns[0].rfc4514_string()
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "setup: tests that setup some parts of the environment.")
+    config.addinivalue_line(
+        "markers", "teardown: tests that tear down some parts of the environment."
+    )
 
 
-@pytest_asyncio.fixture(scope="module")
-async def charm(ops_test: OpsTest) -> str | Path:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    skip_setup = pytest.mark.skip(reason="--no-setup provided.")
+    skip_teardown = pytest.mark.skip(reason="--no-teardown provided.")
+
+    for item in items:
+        if config.getoption("--no-setup") and "setup" in item.keywords:
+            item.add_marker(skip_setup)
+        if config.getoption("--no-teardown") and "teardown" in item.keywords:
+            item.add_marker(skip_teardown)
+        if "upgrade" in item.nodeid.casefold():
+            item.add_marker(pytest.mark.upgrade)
+
+
+@pytest.fixture(scope="session")
+def juju(request: pytest.FixtureRequest) -> Iterator[jubilant.Juju]:
+    if not (model_name := request.config.getoption("--model")):
+        model_name = f"test-openfga-{secrets.token_hex(4)}"
+
+    no_teardown = bool(request.config.getoption("--no-teardown"))
+
+    with juju_model_factory(model_name, keep_model=no_teardown) as juju:
+        juju.wait_timeout = 10 * 60
+
+        yield juju
+
+        if request.session.testsfailed:
+            log = juju.debug_log(limit=1000)
+            print(log, end="")
+
+
+@pytest.fixture(scope="session")
+def openfga_charm() -> Path:
     if charm := os.getenv("CHARM_PATH"):
-        return charm
+        return Path(charm)
+
+    if local_charm := next(Path(".").glob("openfga-k8s*.charm"), None):
+        return local_charm.resolve()
 
     logger.info("Building OpenFGA charm locally")
-    return await ops_test.build_charm(".")
+    try:
+        subprocess.run(["charmcraft", "pack"], check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"OpenFGA charm build failed: {e}") from e
+
+    if local_charm := next(Path(".").glob("openfga-k8s*.charm"), None):
+        return Path(local_charm.resolve())
+    else:
+        raise FileNotFoundError("OpenFGA charm artifact not found")
 
 
-@pytest_asyncio.fixture(scope="module")
-async def tester_charm(ops_test: OpsTest) -> Path:
-    if tester := next(Path("./tests/charms/openfga_requires").glob("*.charm"), None):
+@pytest.fixture
+def openfga_tester_charm() -> Path:
+    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
         return tester.resolve()
 
     logger.info("Building OpenFGA tester charm locally")
-    return await ops_test.build_charm("./tests/charms/openfga_requires/")
+    try:
+        subprocess.run(
+            ["charmcraft", "pack", "--project-dir", "tests/charms/openfga_requires"],
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"OpenFGA tester charm build failed: {e}") from e
+
+    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
+        return Path(tester.resolve())
+    else:
+        raise RuntimeError("OpenFGA tester charm artifact not found")
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def copy_libraries_into_tester_charm() -> None:
     src_lib_path = Path("lib/charms/openfga_k8s/v1/openfga.py")
 
@@ -69,84 +135,33 @@ def copy_libraries_into_tester_charm() -> None:
     shutil.copyfile(src_lib_path, dest_lib_path)
 
 
-async def get_unit_data(ops_test: OpsTest, unit_name: str) -> dict:
-    show_unit_cmd = f"show-unit {unit_name}".split()
-    _, stdout, _ = await ops_test.juju(*show_unit_cmd)
-    cmd_output = yaml.safe_load(stdout)
-    return cmd_output[unit_name]
+@pytest.fixture
+def app_integration_data(juju: jubilant.Juju) -> Callable:
+    return functools.partial(get_app_integration_data, juju)
 
 
-async def get_integration_data(
-    ops_test: OpsTest, app_name: str, integration_name: str, unit_num: int = 0
-) -> Optional[dict]:
-    data = await get_unit_data(ops_test, f"{app_name}/{unit_num}")
-    return next(
-        (
-            integration
-            for integration in data["relation-info"]
-            if integration["endpoint"] == integration_name
-        ),
-        None,
-    )
+@pytest.fixture
+def openfga_integration_data(app_integration_data: Callable) -> dict | None:
+    return app_integration_data(OPENFGA_CLIENT_APP, "openfga")
 
 
-async def get_app_integration_data(
-    ops_test: OpsTest,
-    app_name: str,
-    integration_name: str,
-    unit_num: int = 0,
-) -> Optional[dict]:
-    data = await get_integration_data(ops_test, app_name, integration_name, unit_num)
-    return data["application-data"] if data else None
+@pytest.fixture
+def http_ingress_integration_data(app_integration_data: Callable) -> dict | None:
+    return app_integration_data(OPENFGA_APP, "http-ingress")
 
 
-async def get_unit_integration_data(
-    ops_test: OpsTest,
-    app_name: str,
-    remote_app_name: str,
-    integration_name: str,
-) -> Optional[dict]:
-    data = await get_integration_data(ops_test, app_name, integration_name)
-    return data["related-units"][f"{remote_app_name}/0"]["data"] if data else None
+@pytest.fixture
+def grpc_ingress_integration_data(app_integration_data: Callable) -> dict | None:
+    return app_integration_data(OPENFGA_APP, "grpc-ingress")
 
 
-@pytest_asyncio.fixture
-async def app_integration_data(ops_test: OpsTest) -> Callable:
-    return functools.partial(get_app_integration_data, ops_test)
+@pytest.fixture
+def certificate_integration_data(app_integration_data: Callable) -> dict | None:
+    return app_integration_data(OPENFGA_APP, "certificates")
 
 
-@pytest_asyncio.fixture
-async def unit_integration_data(ops_test: OpsTest) -> Callable:
-    return functools.partial(get_unit_integration_data, ops_test)
-
-
-@pytest_asyncio.fixture
-async def database_integration_data(app_integration_data: Callable) -> Optional[dict]:
-    return await app_integration_data(OPENFGA_APP, "database")
-
-
-@pytest_asyncio.fixture
-async def certificate_integration_data(app_integration_data: Callable) -> Optional[dict]:
-    return await app_integration_data(OPENFGA_APP, "certificates")
-
-
-@pytest_asyncio.fixture
-async def openfga_integration_data(app_integration_data: Callable) -> Optional[dict]:
-    return await app_integration_data(OPENFGA_CLIENT_APP, "openfga")
-
-
-@pytest_asyncio.fixture
-async def http_ingress_integration_data(app_integration_data: Callable) -> Optional[dict]:
-    return await app_integration_data(OPENFGA_APP, "http-ingress")
-
-
-@pytest_asyncio.fixture
-async def grpc_ingress_integration_data(app_integration_data: Callable) -> Optional[dict]:
-    return await app_integration_data(OPENFGA_APP, "grpc-ingress")
-
-
-@pytest_asyncio.fixture
-async def http_ingress_netloc(http_ingress_integration_data: Optional[dict]) -> Optional[str]:
+@pytest.fixture
+def http_ingress_netloc(http_ingress_integration_data: dict | None) -> str | None:
     if not http_ingress_integration_data:
         return None
 
@@ -157,8 +172,8 @@ async def http_ingress_netloc(http_ingress_integration_data: Optional[dict]) -> 
     return matched.group("netloc")
 
 
-@pytest_asyncio.fixture
-async def grpc_ingress_netloc(grpc_ingress_integration_data: Optional[dict]) -> Optional[str]:
+@pytest.fixture
+def grpc_ingress_netloc(grpc_ingress_integration_data: dict | None) -> str | None:
     if not grpc_ingress_integration_data:
         return None
 
@@ -170,33 +185,7 @@ async def grpc_ingress_netloc(grpc_ingress_integration_data: Optional[dict]) -> 
 
 
 @pytest.fixture
-def openfga_application(ops_test: OpsTest) -> Application:
-    return ops_test.model.applications[OPENFGA_APP]
-
-
-@pytest.fixture
-def openfga_client_application(ops_test: OpsTest) -> Application:
-    return ops_test.model.applications[OPENFGA_CLIENT_APP]
-
-
-@asynccontextmanager
-async def remove_integration(
-    ops_test: OpsTest, remote_app_name: str, integration_name: str
-) -> AsyncGenerator[None, None]:
-    remove_integration_cmd = (
-        f"remove-relation {OPENFGA_APP}:{integration_name} {remote_app_name}"
-    ).split()
-    await ops_test.juju(*remove_integration_cmd)
-    await ops_test.model.wait_for_idle(
-        apps=[remote_app_name],
-        status="active",
-    )
-
-    try:
-        yield
-    finally:
-        await ops_test.model.integrate(f"{OPENFGA_APP}:{integration_name}", remote_app_name)
-        await ops_test.model.wait_for_idle(
-            apps=[OPENFGA_APP, remote_app_name],
-            status="active",
-        )
+def http_client() -> Iterator[requests.Session]:
+    with requests.Session() as client:
+        client.verify = False
+        yield client

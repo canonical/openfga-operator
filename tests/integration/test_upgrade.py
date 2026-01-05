@@ -1,138 +1,109 @@
 #!/usr/bin/env python3
-# Copyright 2022 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-import asyncio
 import logging
-import time
 from pathlib import Path
 
+import jubilant
 import pytest
-import yaml
-from pytest_operator.plugin import OpsTest
+import requests
+
+from tests.integration.util import (
+    DB_CHARM,
+    METADATA,
+    all_active,
+    any_error,
+    get_unit_address,
+    is_active,
+    is_blocked,
+    or_,
+)
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-APP_NAME = "openfga"
 
+class TestOpenFGAUpgrade:
+    openfga_app_name = "openfga-upgrade"
+    openfga_client_app_name = "openfga-tester-upgrade"
+    postgresql_app_name = "postgresql-upgrade"
 
-# TODO(nsklikas): Remove skip mark
-@pytest.mark.skip(
-    reason="charm lib update is a breaking change, the requirer charm can't "
-    "integrate with previous openfga version"
-)
-@pytest.mark.abort_on_fail
-async def test_upgrade_running_application(
-    ops_test: OpsTest, charm: str, tester_charm: str
-) -> None:
-    """Deploy latest published charm and upgrade it with charm-under-test.
-
-    Assert on the application status and health check endpoint after upgrade/refresh took place.
-    """
-    # Deploy the charm and wait for active/idle status
-    logger.debug("deploying charms from store")
-    await asyncio.gather(
-        ops_test.model.deploy(
-            METADATA["name"],
-            application_name=APP_NAME,
-            channel="edge",
-            series="jammy",
-        ),
-        ops_test.model.deploy(
-            "postgresql-k8s", application_name="postgresql", channel="edge", trust=True
-        ),
-        ops_test.model.deploy(
-            tester_charm,
-            application_name="openfga-requires",
-            series="jammy",
-        ),
-    )
-
-    logger.debug("adding postgresql relation")
-    await ops_test.model.wait_for_idle(
-        apps=["postgresql"],
-        status="active",
-        timeout=1000,
-    )
-    openfga_unit = ops_test.model.applications[APP_NAME].units[0]
-    await ops_test.model.block_until(
-        lambda: (
-            openfga_unit.workload_status in ["blocked"]
-            and openfga_unit.workload_status_message == "Waiting for postgresql relation"
-        ),
-        timeout=60,
-    )
-
-    await ops_test.model.integrate(APP_NAME, "postgresql")
-    await ops_test.model.block_until(
-        lambda: (
-            openfga_unit.workload_status in ["blocked"]
-            and openfga_unit.workload_status_message == "Please run schema-upgrade action"
-        ),
-        timeout=60,
-    )
-    for i in range(10):
-        action = await openfga_unit.run_action("schema-upgrade")
-        result = await action.wait()
-        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
-        if result.results == {"result": "done", "return-code": 0}:
-            break
-        time.sleep(2)
-
-    await ops_test.model.integrate(APP_NAME, "openfga-requires")
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=["openfga-requires"],
-            status="active",
-            timeout=60,
+    @pytest.mark.setup
+    def test_deploy_openfga_from_charmhub(
+        self, juju: jubilant.Juju, openfga_tester_charm: Path
+    ) -> None:
+        juju.deploy(
+            charm=DB_CHARM,
+            app=self.postgresql_app_name,
+            channel="14/stable",
+            trust=True,
         )
 
-    openfga_requires_unit = ops_test.model.applications["openfga-requires"].units[0]
-    assert "running with store" in openfga_requires_unit.workload_status_message
+        juju.deploy(
+            charm="openfga-k8s",
+            app=self.openfga_app_name,
+            channel="latest/edge",
+            trust=True,
+        )
 
-    # Starting upgrade/refresh
-    logger.debug("starting upgrade test")
+        juju.deploy(
+            charm=openfga_tester_charm,
+            app=self.openfga_client_app_name,
+            trust=True,
+        )
 
-    # Build and deploy charm from local source folder
-    logger.debug("building local charm")
+        juju.integrate(
+            f"{self.openfga_app_name}:openfga", f"{self.openfga_client_app_name}:openfga"
+        )
+        juju.integrate(self.openfga_app_name, f"{self.postgresql_app_name}:database")
 
-    resources = {"oci-image": METADATA["resources"]["oci-image"]["upstream-source"]}
+        juju.wait(
+            ready=all_active(
+                self.postgresql_app_name,
+                self.openfga_app_name,
+                self.openfga_client_app_name,
+            ),
+            error=any_error(
+                self.postgresql_app_name,
+                self.openfga_app_name,
+                self.openfga_client_app_name,
+            ),
+        )
 
-    # Deploy the charm and wait for active/blocked status
-    logger.debug("refreshing running application with the new local charm")
+    def test_refresh_openfga_application(self, juju: jubilant.Juju, openfga_charm: Path) -> None:
+        juju.cli(
+            "refresh",
+            self.openfga_app_name,
+            "--path",
+            str(openfga_charm),
+            "--resource",
+            f"oci-image={METADATA['resources']['oci-image']['upstream-source']}",
+            "--trust",
+        )
 
-    await ops_test.model.applications[APP_NAME].refresh(
-        path=charm,
-        resources=resources,
-    )
-    await ops_test.model.block_until(
-        lambda: ops_test.model.applications[APP_NAME].units[0].workload_status
-        in ["blocked", "active"],
-        timeout=60,
-    )
+        juju.wait(
+            ready=or_(
+                is_active(self.openfga_app_name),
+                is_blocked(self.openfga_app_name),
+            ),
+        )
 
-    logger.debug("running schema-upgrade action")
-    openfga_unit = ops_test.model.applications[APP_NAME].units[0]
-    for i in range(10):
-        action = await openfga_unit.run_action("schema-upgrade")
-        result = await action.wait()
-        logger.info("attempt {} -> action result {} {}".format(i, result.status, result.results))
-        if result.results == {"result": "done", "return-code": 0}:
-            break
-        time.sleep(2)
+    def test_run_schema_upgrade_action(self, juju: jubilant.Juju) -> None:
+        juju.run(
+            unit=f"{self.openfga_app_name}/0",
+            action="schema-upgrade",
+            wait=10 * 60,
+        )
 
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME],
-        status="active",
-        timeout=60,
-    )
+        juju.wait(
+            ready=all_active(self.openfga_app_name),
+        )
 
-    assert ops_test.model.applications[APP_NAME].status == "active"
-
-    upgraded_openfga_unit = ops_test.model.applications[APP_NAME].units[0]
-
-    health = await upgraded_openfga_unit.run("curl -s http://localhost:8080/healthz")
-    await health.wait()
-    assert health.results.get("return-code") == 0
-    assert health.results.get("stdout").strip() == '{"status":"SERVING"}'
+    def test_openfga_health_after_upgrade(
+        self,
+        juju: jubilant.Juju,
+        http_client: requests.Session,
+    ) -> None:
+        unit_address = get_unit_address(juju, self.openfga_app_name)
+        resp = http_client.get(f"http://{unit_address}:8080/healthz")
+        resp.raise_for_status()
