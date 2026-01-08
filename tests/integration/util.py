@@ -3,7 +3,7 @@
 
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
@@ -107,7 +107,7 @@ def get_unit_integration_data(
 @contextmanager
 def remove_integration(
     juju: jubilant.Juju, remote_app_name: str, integration_name: str
-) -> Iterator[None]:
+) -> Generator[None, None, None]:
     juju.remove_relation(f"{OPENFGA_APP}:{integration_name}", remote_app_name)
 
     try:

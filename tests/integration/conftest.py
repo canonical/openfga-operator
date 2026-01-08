@@ -7,7 +7,7 @@ import os
 import secrets
 import shutil
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import suppress
 from pathlib import Path
 from typing import Callable
@@ -35,12 +35,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="The model to run the tests on.",
     )
     parser.addoption(
+        "--no-deploy",
         "--no-setup",
         action="store_true",
         default=False,
         help='Skip tests marked with "setup".',
     )
     parser.addoption(
+        "--keep-models",
         "--no-teardown",
         action="store_true",
         default=False,
@@ -53,6 +55,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers", "teardown: tests that tear down some parts of the environment."
     )
+    config.addinivalue_line("markers", "upgrade:  charm upgrade related test cases.")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -64,12 +67,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_setup)
         if config.getoption("--no-teardown") and "teardown" in item.keywords:
             item.add_marker(skip_teardown)
-        if "upgrade" in item.nodeid.casefold():
-            item.add_marker(pytest.mark.upgrade)
 
 
 @pytest.fixture(scope="session")
-def juju(request: pytest.FixtureRequest) -> Iterator[jubilant.Juju]:
+def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]:
     if not (model_name := request.config.getoption("--model")):
         model_name = f"test-openfga-{secrets.token_hex(4)}"
 
@@ -86,7 +87,16 @@ def juju(request: pytest.FixtureRequest) -> Iterator[jubilant.Juju]:
     keep_model = no_teardown or request.session.testsfailed > 0
     if not keep_model:
         with suppress(jubilant.CLIError):
-            juju_.destroy_model(model_name, destroy_storage=True, force=True)
+            args = [
+                "destroy-model",
+                model_name,
+                "--no-prompt",
+                "--destroy-storage",
+                "--force",
+                "--timeout",
+                "600",
+            ]
+            juju_.cli(*args, include_model=False)
 
 
 @pytest.fixture(scope="session")
@@ -190,7 +200,7 @@ def grpc_ingress_netloc(grpc_ingress_integration_data: dict | None) -> str | Non
 
 
 @pytest.fixture
-def http_client() -> Iterator[requests.Session]:
+def http_client() -> Generator[requests.Session, None, None]:
     with requests.Session() as client:
         client.verify = False
         yield client

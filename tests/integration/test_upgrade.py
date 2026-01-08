@@ -23,6 +23,7 @@ from tests.integration.util import (
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.upgrade
 class TestOpenFGAUpgrade:
     openfga_app_name = "openfga-upgrade"
     openfga_client_app_name = "openfga-tester-upgrade"
