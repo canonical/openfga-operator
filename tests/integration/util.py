@@ -4,7 +4,7 @@
 import logging
 import re
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable
 
@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 StatusPredicate = Callable[[jubilant.Status], bool]
 
 
-@contextmanager
-def juju_model_factory(model_name: str, *, keep_model: bool = False) -> Iterator[jubilant.Juju]:
+def juju_model_factory(model_name: str) -> jubilant.Juju:
     juju = jubilant.Juju()
     try:
         juju.add_model(model_name, config={"logging-config": "<root>=INFO"})
@@ -48,12 +47,7 @@ def juju_model_factory(model_name: str, *, keep_model: bool = False) -> Iterator
 
         juju.model = model_name
 
-    try:
-        yield juju
-    finally:
-        if not keep_model:
-            with suppress(jubilant.CLIError):
-                juju.destroy_model(model_name, destroy_storage=True, force=True)
+    return juju
 
 
 def extract_certificate_common_name(certificate: str) -> str | None:

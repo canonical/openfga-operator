@@ -8,6 +8,7 @@ import secrets
 import shutil
 import subprocess
 from collections.abc import Iterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Callable
 
@@ -72,16 +73,20 @@ def juju(request: pytest.FixtureRequest) -> Iterator[jubilant.Juju]:
     if not (model_name := request.config.getoption("--model")):
         model_name = f"test-openfga-{secrets.token_hex(4)}"
 
+    juju_ = juju_model_factory(model_name)
+    juju_.wait_timeout = 10 * 60
+
+    yield juju_
+
+    if request.session.testsfailed:
+        log = juju_.debug_log(limit=1000)
+        print(log, end="")
+
     no_teardown = bool(request.config.getoption("--no-teardown"))
-
-    with juju_model_factory(model_name, keep_model=no_teardown) as juju:
-        juju.wait_timeout = 10 * 60
-
-        yield juju
-
-        if request.session.testsfailed:
-            log = juju.debug_log(limit=1000)
-            print(log, end="")
+    keep_model = no_teardown or request.session.testsfailed > 0
+    if not keep_model:
+        with suppress(jubilant.CLIError):
+            juju_.destroy_model(model_name, destroy_storage=True, force=True)
 
 
 @pytest.fixture(scope="session")
