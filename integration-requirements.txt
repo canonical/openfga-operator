@@ -1,4 +1,6 @@
 -r requirements.txt
-juju
+cryptography
+jubilant~=1.0
 pytest
-pytest-operator==0.43.2
+requests
+tenacity
