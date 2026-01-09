@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.5](https://github.com/canonical/openfga-operator/compare/v1.6.4...v1.6.5) (2026-01-09)
+
+
+### Bug Fixes
+
+* create upgrade marker statically and use juju cli to destroy model ([5dbfa41](https://github.com/canonical/openfga-operator/commit/5dbfa41541f434db1c7f296c8b84a23b0c9d6473))
+* disable the noisy jubilant.wait logger ([5a3ea13](https://github.com/canonical/openfga-operator/commit/5a3ea13be5e7ebf1ad759a885efe985c129a6ec8))
+* keep the juju model if the integration tests failed ([9973c4b](https://github.com/canonical/openfga-operator/commit/9973c4bbb35d7bf8ffa2c13064563ee38ed77ab2))
+* use jubilant for integration tests ([3d337db](https://github.com/canonical/openfga-operator/commit/3d337db30ddd9d91570c289fdb7d4a3260c067d5))
+
 ## [1.6.4](https://github.com/canonical/openfga-operator/compare/v1.6.3...v1.6.4) (2025-12-12)
 
 
