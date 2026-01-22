@@ -84,7 +84,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for OpenFGA
-    upstream-source: ghcr.io/canonical/openfga:1.10.1
+    upstream-source: ghcr.io/canonical/openfga:1.11.2
 
 config:
   options:
