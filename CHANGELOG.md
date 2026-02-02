@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.6](https://github.com/canonical/openfga-operator/compare/v1.6.5...v1.6.6) (2026-02-02)
+
+
+### Bug Fixes
+
+* change default log level from 'info' to 'error' ([a77536a](https://github.com/canonical/openfga-operator/commit/a77536ad6f1b7e73f6d9ba11a142953a4853897b))
+
 ## [1.6.5](https://github.com/canonical/openfga-operator/compare/v1.6.4...v1.6.5) (2026-01-09)
 
 
