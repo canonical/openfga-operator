@@ -93,7 +93,7 @@ config:
         Configures the log level of gunicorn.
 
         Acceptable values are: "info", "debug", "warning", "error" and "critical"
-      default: "info"
+      default: "error"
       type: string
     cpu:
       description: |
