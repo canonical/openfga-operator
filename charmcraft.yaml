@@ -22,7 +22,7 @@ description: |
   Community section for third-party SDKs and tools.
 
 links:
-  documentation: https://discourse.charmhub.io/t/openfga-k8s-docs-index/13826
+  documentation: https://canonical-identity.readthedocs-hosted.com/reference/charms/openfga
   website: https://github.com/canonical/openfga-operator
   source: https://github.com/canonical/openfga-operator
   issues: https://github.com/canonical/openfga-operator/issues
