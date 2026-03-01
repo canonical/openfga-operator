@@ -14,7 +14,7 @@ jobs:
       run-release: ${{ steps.check.outputs.run_release }}
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
@@ -43,7 +43,7 @@ jobs:
     name: Release any bumped library
     needs: filter
     if: needs.filter.outputs.run-release == 'true'
-    uses: canonical/identity-team/.github/workflows/charm-libs-release.yaml@f858d2dce01066546803a4279c3525f053ca7d0f # v1.9.2
+    uses: canonical/identity-team/.github/workflows/charm-libs-release.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
     secrets:
       CHARMCRAFT_CREDENTIALS: ${{ secrets.CHARMCRAFT_CREDENTIALS }}
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
