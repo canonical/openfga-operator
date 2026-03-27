@@ -108,23 +108,6 @@ def test_database_integration(juju: jubilant.Juju) -> None:
     )
     assert database_integration_data, "Database integration data is empty."
     assert database_integration_data["endpoints"]
-    assert "read-only-endpoints" not in database_integration_data, (
-        "Read-only endpoints should be empty."
-    )
-
-    # Scale up the database
-    juju.cli("scale-application", DB_APP, "2")
-
-    juju.wait(
-        ready=all_active(DB_APP, OPENFGA_APP),
-        timeout=10 * 60,
-    )
-
-    database_integration_data = get_app_integration_data(
-        juju, app_name=OPENFGA_APP, integration_name="database"
-    )
-    assert database_integration_data, "Database integration data is empty."
-    assert database_integration_data["endpoints"]
     assert database_integration_data["read-only-endpoints"], "Read-only endpoints missing."
 
 

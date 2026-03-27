@@ -87,16 +87,7 @@ def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]
     keep_model = no_teardown or request.session.testsfailed > 0
     if not keep_model:
         with suppress(jubilant.CLIError):
-            args = [
-                "destroy-model",
-                model_name,
-                "--no-prompt",
-                "--destroy-storage",
-                "--force",
-                "--timeout",
-                "600",
-            ]
-            juju_.cli(*args, include_model=False)
+            juju_.destroy_model(model_name, destroy_storage=True, force=True, timeout=10 * 60)
 
 
 @pytest.fixture(scope="session")
