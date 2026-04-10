@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.7](https://github.com/canonical/openfga-operator/compare/v1.6.6...v1.6.7) (2026-04-10)
+
+
+### Bug Fixes
+
+* fix the integration tests ([f9596e2](https://github.com/canonical/openfga-operator/commit/f9596e2a206363c4cd3aa86d4a5baf7b25aeaa87))
+
 ## [1.6.6](https://github.com/canonical/openfga-operator/compare/v1.6.5...v1.6.6) (2026-02-02)
 
 
