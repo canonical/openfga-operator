@@ -20,7 +20,7 @@ on:
 jobs:
   promote-charm:
       name: Promote charm
-      uses: canonical/identity-team/.github/workflows/charm-promotion.yaml@59d4d2782bcb8fc2deea2aa08442e4c8603f2689 # v1.11.2
+      uses: canonical/identity-team/.github/workflows/charm-promotion.yaml@5830f3e6723de07cb5b7ccb6c84031d8b2964c62 # v1.11.4
       with:
         origin-channel: ${{ github.event.inputs.origin-channel }}
         destination-channel: ${{ github.event.inputs.destination-channel }}
