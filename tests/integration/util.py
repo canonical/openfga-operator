@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import logging
+import platform
 import re
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -46,6 +47,16 @@ def juju_model_factory(model_name: str) -> jubilant.Juju:
             raise
 
         juju.model = model_name
+
+    # Set model constraints dynamically based on native host architecture
+    arch_map = {
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "x86_64": "amd64",
+        "amd64": "amd64",
+    }
+    host_arch = arch_map.get(platform.machine().lower(), "amd64")
+    juju.cli("set-model-constraints", f"arch={host_arch}")
 
     return juju
 
