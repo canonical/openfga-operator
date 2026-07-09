@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/canonical/openfga-operator/compare/v1.6.6...v1.7.0) (2026-07-09)
+
+
+### Features
+
+* support arm4 ([#400](https://github.com/canonical/openfga-operator/issues/400)) ([5f1fa6e](https://github.com/canonical/openfga-operator/commit/5f1fa6e737a95c1b5b63bf6d58ba2e8d101f7789))
+* support arm64 ([95187dc](https://github.com/canonical/openfga-operator/commit/95187dce52f5b8d63bc7fb29dc413664b37b3ba8))
+
+
+### Bug Fixes
+
+* fix the integration tests ([f9596e2](https://github.com/canonical/openfga-operator/commit/f9596e2a206363c4cd3aa86d4a5baf7b25aeaa87))
+
 ## [1.6.6](https://github.com/canonical/openfga-operator/compare/v1.6.5...v1.6.6) (2026-02-02)
 
 
