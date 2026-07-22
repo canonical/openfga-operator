@@ -1,6 +1,66 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+[project]
+name = "openfga-operator"
+version = "0.0.0"
+description = "Charmed OpenFGA Operator"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+    "cosl >= 0.0.26",
+    "ops ==3.8.0",
+    "pydantic ~= 2.0",
+    "requests ~= 2.32",
+    "jsonschema ~= 4.23",
+    "lightkube",
+    "cryptography",
+]
+
+[dependency-groups]
+fmt = [
+    "isort",
+    "ruff",
+]
+lint = [
+    "codespell",
+    "isort",
+    "ruff",
+    "tomli",
+]
+unit = [
+    "charmhelpers",
+    "coverage[toml]",
+    "cryptography",
+    "lightkube",
+    "jsonschema",
+    "ops[testing]",
+    "pytest",
+    "pytest-mock",
+    "requests",
+]
+integration = [
+    "cryptography",
+    "jubilant~=1.0",
+    "pytest",
+    "requests",
+    "tenacity",
+]
+dev = [
+    "pre-commit",
+    "mypy",
+    "types-PyYAML",
+    "types-requests",
+    { include-group = "fmt" },
+    { include-group = "lint" },
+    { include-group = "unit" },
+    { include-group = "integration" },
+]
+
+[tool.uv]
+package = false
+
 # Testing tools configuration
 [tool.coverage.run]
 branch = true

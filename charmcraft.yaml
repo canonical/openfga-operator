@@ -116,12 +116,10 @@ actions:
 
 parts:
   charm:
-    charm-binary-python-packages:
-      - requests ~= 2.32
-      - jsonschema ~= 4.23
-      - lightkube
-      - cryptography
-      - "setuptools>=70.0.0"
+    plugin: uv
+    source: .
+    build-snaps:
+      - astral-uv
     build-packages:
       - "rustc-1.85"
       - "cargo-1.85"
