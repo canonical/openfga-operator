@@ -10,7 +10,7 @@ license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
     "cosl >= 0.0.26",
-    "ops ==3.8.0",
+    "ops ==3.8.1",
     "pydantic ~= 2.0",
     "requests ~= 2.32",
     "jsonschema ~= 4.23",
