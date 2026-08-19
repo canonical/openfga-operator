@@ -22,13 +22,13 @@ requires:
 
 parts:
   charm:
-    charm-binary-python-packages:
-      - pydantic ~= 2.0
-      - jsonschema
-    build-packages:
-      - rustc
-      - cargo
+    plugin: uv
+    source: .
+    build-snaps:
+      - astral-uv
 
 platforms:
   ubuntu@22.04:amd64:
   ubuntu@22.04:arm64:
+  ubuntu@26.04:amd64:
+  ubuntu@26.04:arm64:
