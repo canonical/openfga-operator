@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/canonical/openfga-operator/compare/v1.7.0...v1.7.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency ops to v3.8.1 ([9e0bb49](https://github.com/canonical/openfga-operator/commit/9e0bb49a5d9de2bce76facf02bd0ccadb1482e8d))
+* **deps:** update dependency ops to v3.8.1 ([#416](https://github.com/canonical/openfga-operator/issues/416)) ([fc04380](https://github.com/canonical/openfga-operator/commit/fc04380f0fd1eac6fe72f11fe0f53bb06cc4f425))
+
 ## [1.7.0](https://github.com/canonical/openfga-operator/compare/v1.6.6...v1.7.0) (2026-07-09)
 
 
