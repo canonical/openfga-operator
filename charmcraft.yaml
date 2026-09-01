@@ -120,10 +120,9 @@ parts:
     source: .
     build-snaps:
       - astral-uv
-    build-packages:
-      - "rustc-1.85"
-      - "cargo-1.85"
 
 platforms:
   ubuntu@22.04:amd64:
   ubuntu@22.04:arm64:
+  ubuntu@26.04:amd64:
+  ubuntu@26.04:arm64:

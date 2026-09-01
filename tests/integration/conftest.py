@@ -4,6 +4,7 @@
 import functools
 import logging
 import os
+import platform
 import secrets
 import shutil
 import subprocess
@@ -112,19 +113,29 @@ def openfga_charm() -> Path:
 
 @pytest.fixture
 def openfga_tester_charm() -> Path:
-    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
+    os_version = platform.freedesktop_os_release().get("VERSION_ID", "22.04")
+    glob_pattern = f"openfga-requires*{os_version}*.charm"
+
+    if tester := next(Path(".").glob(glob_pattern), None):
         return tester.resolve()
 
-    logger.info("Building OpenFGA tester charm locally")
+    logger.info(f"Building OpenFGA tester charm locally for {os_version}")
     try:
         subprocess.run(
-            ["charmcraft", "pack", "--project-dir", "tests/charms/openfga_requires"],
+            [
+                "charmcraft",
+                "pack",
+                "--project-dir",
+                "tests/charms/openfga_requires",
+                "--platform",
+                f"ubuntu@{os_version}",
+            ],
             check=True,
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"OpenFGA tester charm build failed: {e}") from e
 
-    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
+    if tester := next(Path(".").glob(glob_pattern), None):
         return Path(tester.resolve())
     else:
         raise RuntimeError("OpenFGA tester charm artifact not found")
