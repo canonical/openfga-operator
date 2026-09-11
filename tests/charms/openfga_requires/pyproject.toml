@@ -1,3 +1,16 @@
+[project]
+name = "openfga-requires"
+version = "0.0.0"
+description = "OpenFGA Test Charm"
+requires-python = ">=3.10"
+dependencies = [
+    "charmlibs-interfaces-openfga~=1.0.0",
+    "jsonschema",
+    "ops >= 1.5.0",
+    "pydantic ~= 2.0",
+    "requests",
+]
+
 # Testing tools configuration
 [tool.coverage.run]
 branch = true
