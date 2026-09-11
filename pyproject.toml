@@ -9,6 +9,7 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
+    "charmlibs-interfaces-openfga~=1.0.0",
     "cosl >= 0.0.26",
     "ops ==3.8.1",
     "pydantic ~= 2.0",
