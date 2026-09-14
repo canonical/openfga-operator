@@ -3,6 +3,10 @@
 
 """# Interface Library for OpenFGA.
 
+> **DEPRECATED**
+> This charm library is deprecated in favor of the `charmlibs-interfaces-openfga` PyPI package.
+> Please install `charmlibs-interfaces-openfga` and import from `charmlibs.interfaces.openfga`.
+
 This library wraps relation endpoints using the `openfga` interface
 and provides a Python API for requesting OpenFGA authorization model
 stores to be created.
@@ -82,7 +86,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 5
+LIBPATCH = 6
 
 PYDEPS = ["pydantic ~= 2.0"]
 

@@ -8,6 +8,12 @@ import logging
 from secrets import token_urlsafe
 from typing import Any
 
+from charmlibs.interfaces.openfga import (
+    OpenFGAProvider,
+    OpenfgaProviderAppData,
+    OpenfgaProviderBaseData,
+    OpenFGAStoreRequestEvent,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -21,12 +27,6 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     KubernetesComputeResourcesPatch,
     ResourceRequirements,
     adjust_resource_requirements,
-)
-from charms.openfga_k8s.v1.openfga import (
-    OpenFGAProvider,
-    OpenfgaProviderAppData,
-    OpenfgaProviderBaseData,
-    OpenFGAStoreRequestEvent,
 )
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer

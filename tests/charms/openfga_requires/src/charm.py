@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from charmlibs.interfaces.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
 from charms.certificate_transfer_interface.v0.certificate_transfer import (
     CertificateAvailableEvent,
     CertificateTransferRequires,
 )
-from charms.openfga_k8s.v1.openfga import OpenFGARequires, OpenFGAStoreCreateEvent
 from ops import EventBase, main
 from ops.charm import CharmBase
 from ops.model import ActiveStatus, WaitingStatus

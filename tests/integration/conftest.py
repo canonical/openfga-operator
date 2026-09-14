@@ -112,7 +112,7 @@ def openfga_charm() -> Path:
 
 @pytest.fixture
 def openfga_tester_charm() -> Path:
-    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
+    if tester := next(Path(".").rglob("openfga-requires*.charm"), None):
         return tester.resolve()
 
     logger.info("Building OpenFGA tester charm locally")
@@ -124,7 +124,7 @@ def openfga_tester_charm() -> Path:
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"OpenFGA tester charm build failed: {e}") from e
 
-    if tester := next(Path(".").glob("openfga-requires*.charm"), None):
+    if tester := next(Path(".").rglob("openfga-requires*.charm"), None):
         return Path(tester.resolve())
     else:
         raise RuntimeError("OpenFGA tester charm artifact not found")
