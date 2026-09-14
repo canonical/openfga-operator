@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "charmlibs-interfaces-openfga~=1.0.0",
     "cosl >= 0.0.26",
-    "ops ==3.8.1",
+    "ops ==3.8.2",
     "pydantic ~= 2.0",
     "requests ~= 2.32",
     "jsonschema ~= 4.23",
