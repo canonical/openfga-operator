@@ -53,6 +53,11 @@ class TestOpenFGAUpgrade:
             trust=True,
         )
 
+        juju.wait(
+            ready=is_active(self.postgresql_app_name),
+            error=any_error(self.postgresql_app_name),
+        )
+
         juju.integrate(
             f"{self.openfga_app_name}:openfga", f"{self.openfga_client_app_name}:openfga"
         )
