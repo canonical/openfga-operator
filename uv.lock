@@ -749,6 +749,9 @@ wheels = [
 name = "httpcore2"
 version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
 dependencies = [
     { name = "h11" },
     { name = "truststore" },
@@ -759,20 +762,69 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "(python_full_version >= '3.11' and python_full_version < '3.15' and sys_platform != 'emscripten') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
+]
+dependencies = [
+    { name = "h11" },
+    { name = "truststore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/7f/dc04d827418ffb1871b14af9174706d8363262d6c665e0812bd1bbaf2753/httpcore2-2.15.0.tar.gz", hash = "sha256:c8f2d83978da5313d55456a284fa46f0c6a228e2eb38bfc49ce92f85432435d4", size = 69126, upload-time = "2026-10-19T20:08:50.814Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/f4/23ed206cb8b3e6e88c0ed5c534f6474b17d1c83ffa5b2ff06c7f4f0498db/httpcore2-2.15.0-py3-none-any.whl", hash = "sha256:71d31c704fe527c148260f030d3bc25457cdbf8b0accd45b29d76b7d561623c9", size = 84308, upload-time = "2026-10-19T20:08:48.094Z" },
+]
+
+[[package]]
 name = "httpx2"
 version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
 dependencies = [
     { name = "anyio", marker = "sys_platform != 'emscripten'" },
-    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten'" },
+    { name = "idna" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e8/67/58353f1848b4ba568e1ec22ea1e0d8e039f0bca5fde7e2d1f07739fd83e7/httpx2-2.14.0.tar.gz", hash = "sha256:47ad61a3c40282cd8d0dc96311531f00f5bfc71a066c6fe3b36d8f63fb9e4f6e", size = 102036, upload-time = "2026-10-18T16:29:22.627Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/5a/469616aa8c2cbb0bb9dd67a3c18d07c01ab604cc0b236ee1c47d260c7f6e/httpx2-2.14.0-py3-none-any.whl", hash = "sha256:9d20c13a10bae1773a0be3b0f1e5beeb4bdd549bc3a2ba18efa32897c65403e4", size = 96901, upload-time = "2026-10-18T16:29:20.819Z" },
+]
+
+[package.optional-dependencies]
+http2 = [
+    { name = "h2" },
+]
+ws = [
+    { name = "wsproto" },
+]
+
+[[package]]
+name = "httpx2"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "python_full_version >= '3.12' and python_full_version < '3.15' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.11' and python_full_version < '3.15' and sys_platform != 'emscripten') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
+]
+dependencies = [
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten'" },
     { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
     { name = "idna" },
     { name = "truststore", marker = "sys_platform != 'emscripten'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/67/58353f1848b4ba568e1ec22ea1e0d8e039f0bca5fde7e2d1f07739fd83e7/httpx2-2.14.0.tar.gz", hash = "sha256:47ad61a3c40282cd8d0dc96311531f00f5bfc71a066c6fe3b36d8f63fb9e4f6e", size = 102036, upload-time = "2026-10-18T16:29:22.627Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/c2/b40b883006edfc00864c51d019ca885350cb7bb673a4d619e0db1bf00601/httpx2-2.15.0.tar.gz", hash = "sha256:19c19e4a3cfc361713595ab9e0ffa68bece8c370e4efddefe1ec8fb3c99b23a9", size = 101579, upload-time = "2026-10-19T20:08:51.692Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/5a/469616aa8c2cbb0bb9dd67a3c18d07c01ab604cc0b236ee1c47d260c7f6e/httpx2-2.14.0-py3-none-any.whl", hash = "sha256:9d20c13a10bae1773a0be3b0f1e5beeb4bdd549bc3a2ba18efa32897c65403e4", size = 96901, upload-time = "2026-10-18T16:29:20.819Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/fa/b94b651cfc7105bc7c302194165b47dc07fe9a7b7e7f15258a3b1574538e/httpx2-2.15.0-py3-none-any.whl", hash = "sha256:8fec547d606bf2dedab32bf43e81e24571471a059fe783c3cdd6f03fb2cc50e8", size = 96421, upload-time = "2026-10-19T20:08:49.536Z" },
 ]
 
 [package.optional-dependencies]
@@ -1062,7 +1114,8 @@ name = "lightkube"
 version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "httpx2", extra = ["http2", "ws"] },
+    { name = "httpx2", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, extra = ["http2", "ws"], marker = "python_full_version < '3.11'" },
+    { name = "httpx2", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, extra = ["http2", "ws"], marker = "python_full_version >= '3.11'" },
     { name = "lightkube-models" },
     { name = "msgspec" },
     { name = "pyyaml" },
