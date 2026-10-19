@@ -65,6 +65,13 @@
       "automerge": true,
       "schedule": ["at any time"],
       "additionalBranchPrefix": "auto-"
+    },
+    {
+      "description": "Ignore Juju Terraform provider version bumps",
+      "matchManagers": ["terraform"],
+      "matchDatasources": ["terraform-provider"],
+      "matchPackageNames": ["juju", "juju/juju"],
+      "enabled": false
     }
   ],
   "lockFileMaintenance": {
