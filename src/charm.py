@@ -215,6 +215,7 @@ class OpenFGAOperatorCharm(CharmBase):
 
         # Actions
         self.framework.observe(self.on.schema_upgrade_action, self._on_schema_upgrade_action)
+        self.framework.observe(self.on.get_token_action, self._on_get_token_action)
 
     @property
     def _pebble_layer(self) -> Layer:
@@ -438,6 +439,14 @@ class OpenFGAOperatorCharm(CharmBase):
                 http_api_url=self.http_ingress_integration.url,
             )
         )
+
+    def _on_get_token_action(self, event: ActionEvent) -> None:
+        content = self.secrets[PRESHARED_TOKEN_SECRET_LABEL]
+        if not content or not (token := content.get(PRESHARED_TOKEN_SECRET_KEY)):
+            event.fail("OpenFGA API token is not available yet")
+            return
+
+        event.set_results({"token": token})
 
     def _on_schema_upgrade_action(self, event: ActionEvent) -> None:
         if not self.unit.is_leader():

@@ -113,7 +113,8 @@ config:
 actions:
   schema-upgrade:
     description: Upgrade the application database schema.
-
+  get-token:
+    description: Return the OpenFGA preshared authentication token
 parts:
   charm:
     plugin: uv
