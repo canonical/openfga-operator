@@ -180,15 +180,12 @@ import json
 import logging
 import lzma
 import os
-import platform
 import re
-import subprocess
-import tempfile
-import uuid
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import yaml
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from cosl import CosTool, DashboardPath40UID, LZMABase64
+from cosl.types import QueryType, type_convert_stored
 from ops.charm import (
     CharmBase,
     HookEvent,
@@ -203,12 +200,9 @@ from ops.framework import (
     EventSource,
     Object,
     ObjectEvents,
-    StoredDict,
-    StoredList,
     StoredState,
 )
 from ops.model import Relation
-from cosl import LZMABase64, DashboardPath40UID
 
 # The unique Charmhub library identifier, never change it
 LIBID = "c49eb9c7dfef40c7b6235ebd67010a3f"
@@ -219,7 +213,7 @@ LIBAPI = 0
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
 
-LIBPATCH = 44
+LIBPATCH = 54
 
 PYDEPS = ["cosl >= 0.0.50"]
 
@@ -229,6 +223,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_RELATION_NAME = "grafana-dashboard"
 DEFAULT_PEER_NAME = "grafana"
 RELATION_INTERFACE_NAME = "grafana_dashboard"
+
+# Maximum number of examples included in an aggregated log message (see `_examples`).
+_MAX_LOGGED_EXAMPLES = 5
 
 TOPOLOGY_TEMPLATE_DROPDOWNS = [  # type: ignore
     {
@@ -394,6 +391,13 @@ REACTIVE_CONVERTER = {  # type: ignore
 }
 
 
+def _data_hash(data: Any) -> str:
+    """Deterministic hash of a template dict for use as a stable relation data key."""
+    return hashlib.shake_128(
+        json.dumps(data, sort_keys=True).encode()
+    ).digest(8).hex()
+
+
 class RelationNotFoundError(Exception):
     """Raised if there is no relation with the given name."""
 
@@ -487,6 +491,18 @@ def _resolve_dir_against_charm_path(charm: CharmBase, *path_elements: str) -> st
         raise InvalidDirectoryPathError(str(dir_path), "is not a directory")
 
     return str(dir_path)
+
+
+def _examples(items: List[Any]) -> str:
+    """Render the first few items of a list for an aggregated log message.
+
+    Every log record costs a `juju-log` call, so hot loops log a single summary instead of
+    one record per item. Only DEBUG summaries are truncated: WARNING and ERROR ones list
+    every item, since the cost is per record, not per length.
+    """
+    shown = ", ".join(map(str, items[:_MAX_LOGGED_EXAMPLES]))
+    remaining = len(items) - _MAX_LOGGED_EXAMPLES
+    return f"{shown}, ... ({remaining} more)" if remaining > 0 else shown
 
 
 def _validate_relation_by_interface_and_direction(
@@ -587,9 +603,19 @@ class CharmedDashboard:
                     datasources[template_value["name"]] = template_value["query"].lower()
 
             # Put our own variables in the template
+            # We only want to inject our own dropdowns IFF they are NOT
+            # already in the template coming over relation data.
+            # We'll store all dropdowns in the template from the provider
+            # in a set. We'll add our own if they are not in this set.
+            existing_names = {
+                item.get("name")
+                for item in dict_content["templating"]["list"]
+            }
+
             for d in template_dropdowns:  # type: ignore
-                if d not in dict_content["templating"]["list"]:
+                if d.get("name") not in existing_names:
                     dict_content["templating"]["list"].insert(0, d)
+                    existing_names.add(d.get("name"))
 
         dict_content = cls._replace_template_fields(dict_content, datasources, existing_templates)
         return json.dumps(dict_content)
@@ -604,30 +630,45 @@ class CharmedDashboard:
         """
         replacements = {"loki": "${lokids}", "prometheus": "${prometheusds}"}
         used_replacements = []  # type: List[str]
+        # Panels skipped across the whole dashboard (top level and rows), logged once below
+        unrecognized_types: Set[str] = set()
+        unknown_formats = 0
 
         # If any existing datasources match types we know, or we didn't find
         # any templating variables at all, template them.
         if datasources or not existing_templates:
             panels = dict_content.get("panels", {})
             if panels:
-                dict_content["panels"] = cls._template_panels(
+                dict_content["panels"], types, formats = cls._template_panels(
                     panels, replacements, used_replacements, existing_templates, datasources
                 )
+                unrecognized_types |= types
+                unknown_formats += formats
 
             # Find panels nested under rows
             rows = dict_content.get("rows", {})
             if rows:
                 for row_idx, row in enumerate(rows):
                     if "panels" in row.keys():
-                        rows[row_idx]["panels"] = cls._template_panels(
+                        rows[row_idx]["panels"], types, formats = cls._template_panels(
                             row["panels"],
                             replacements,
                             used_replacements,
                             existing_templates,
                             datasources,
                         )
+                        unrecognized_types |= types
+                        unknown_formats += formats
 
                 dict_content["rows"] = rows
+
+        if unrecognized_types:
+            logger.debug(
+                "skipped panels with unrecognized datasource types: %s",
+                _examples(sorted(unrecognized_types)),
+            )
+        if unknown_formats:
+            logger.error("unknown datasource format: skipped %d panel(s)", unknown_formats)
 
         # Finally, go back and pop off the templates we stubbed out
         deletions = []
@@ -646,18 +687,25 @@ class CharmedDashboard:
     @classmethod
     def _template_panels(
         cls,
-        panels: dict,
+        panels: List[dict],
         replacements: dict,
         used_replacements: list,
         existing_templates: bool,
         datasources: dict,
-    ) -> dict:
-        """Iterate through a `panels` object and template it appropriately."""
+    ) -> Tuple[List[dict], Set[str], int]:
+        """Iterate through a `panels` object and template it appropriately.
+
+        Returns:
+            The templated panels, the unrecognized datasource types and the number of panels
+            with an unknown datasource format. The caller logs the skipped panels once per
+            dashboard (see `_examples`).
+        """
         # Go through all the panels. If they have a datasource set, AND it's one
         # that we can convert to ${lokids} or ${prometheusds}, by stripping off the
         # ${} templating and comparing the name to the list we built, replace it,
         # otherwise, leave it alone.
-        #
+        unrecognized_types: Set[str] = set()
+        unknown_formats = 0
         for panel in panels:
             if "datasource" not in panel or not panel.get("datasource"):
                 continue
@@ -678,10 +726,12 @@ class CharmedDashboard:
                     elif dstype == "prometheus":
                         panel["datasource"]["uid"] = "${prometheusds}"
                     else:
-                        logger.debug("Unrecognized datasource type '%s'; skipping", dstype)
+                        # repr(): shows empty types, and a malformed one (e.g. a list)
+                        # is not hashable
+                        unrecognized_types.add(repr(dstype))
                         continue
                 else:
-                    logger.error("Unknown datasource format: skipping")
+                    unknown_formats += 1
                     continue
             else:
                 if isinstance(panel["datasource"], str):
@@ -716,9 +766,10 @@ class CharmedDashboard:
                         used_replacements.append(ds)
                         panel["datasource"]["uid"] = replacement
                 else:
-                    logger.error("Unknown datasource format: skipping")
+                    unknown_formats += 1
                     continue
-        return panels
+
+        return panels, unrecognized_types, unknown_formats
 
     @classmethod
     def _inject_labels(cls, content: str, topology: dict, transformer: "CosTool") -> str:
@@ -787,14 +838,32 @@ class CharmedDashboard:
         topology_with_prefix = {"juju_{}".format(k): v for k, v in topology.items()}
 
         # We need to use an index so we can insert the changed element back later
+        unknown_formats = 0
         for panel_idx, panel in enumerate(panels):
             if not isinstance(panel, dict):
                 continue
 
+            if cls._has_unknown_datasource_format(panel):
+                # `_modify_panel` skips these; count them to log once (see `_examples`)
+                unknown_formats += 1
+
             # Use the index to insert it back in the same location
             panels[panel_idx] = cls._modify_panel(panel, topology_with_prefix, transformer)
 
+        if unknown_formats:
+            logger.error(
+                "unknown datasource format: skipped label injection on %d panel(s)",
+                unknown_formats,
+            )
         return json.dumps(dict_content)
+
+    @staticmethod
+    def _has_unknown_datasource_format(panel: dict) -> bool:
+        """Whether `_modify_panel` would skip an expression because of the datasource format."""
+        if "datasource" not in panel or isinstance(panel["datasource"], (str, dict)):
+            return False
+        targets = panel.get("targets") or []
+        return any(isinstance(target, dict) and "expr" in target for target in targets)
 
     @classmethod
     def _modify_panel(cls, panel: dict, topology: dict, transformer: "CosTool") -> dict:
@@ -815,7 +884,10 @@ class CharmedDashboard:
         # Do the same for any offsets
         offset_re = re.compile(r"offset\s+(?P<value>-?\s*[$\w]+)")
 
-        known_datasources = {"${prometheusds}": "promql", "${lokids}": "logql"}
+        known_datasources: Dict[str, QueryType] = {
+            "${prometheusds}": "promql",
+            "${lokids}": "logql",
+        }
 
         targets = panel["targets"]
 
@@ -838,7 +910,7 @@ class CharmedDashboard:
                     continue
                 querytype = known_datasources[panel["datasource"]["uid"]]
             else:
-                logger.error("Unknown datasource format: skipping")
+                # Unknown datasource format: counted and logged once by `_inject_labels`
                 continue
 
             # Capture all values inside `[]` into a list which we'll iterate over later to
@@ -857,7 +929,9 @@ class CharmedDashboard:
             # actual type is without re-implementing a complete dashboard parser, but no
             # harm will some from passing invalid promql -- we'll just get the original back.
             #
-            replacement = transformer.inject_label_matchers(expr, topology, querytype)
+            replacement = transformer.inject_label_matchers(
+                expr, {k: k for k in topology}, querytype, dashboard_variable=True
+            )
 
             if replacement == target["expr"]:
                 # promql-transform caught an error. Move on
@@ -942,27 +1016,34 @@ class CharmedDashboard:
     @classmethod
     def _replace_uid(
         cls, *, dashboard_dict: dict, dashboard_path: Path, charm_dir: Path, charm_name: str
-    ):
+    ) -> bool:
+        """Give the dashboard a "Path40" uid unless it already has a valid one.
+
+        Returns:
+            True if the uid was replaced, False if the original uid was kept. The caller
+            logs a summary instead of this method logging once per dashboard.
+        """
         # If we're running this from within an aggregator (such as grafana agent), then the uid was
         # already rendered there, so we do not want to overwrite it with a uid generated from aggregator's info.
         # We overwrite the uid only if it's not a valid "Path40" uid.
-        if not DashboardPath40UID.is_valid(original_uid := dashboard_dict.get("uid", "")):
+        original_uid = dashboard_dict.get("uid", "")
+
+        if DashboardPath40UID.is_valid(original_uid):
+            return False
+
+        try:
             rel_path = str(
                 dashboard_path.relative_to(charm_dir)
                 if dashboard_path.is_absolute()
                 else dashboard_path
             )
-            dashboard_dict["uid"] = DashboardPath40UID.generate(charm_name, rel_path)
-            logger.debug(
-                "Processed dashboard '%s': replaced original uid '%s' with '%s'",
-                dashboard_path,
-                original_uid,
-                dashboard_dict["uid"],
-            )
+        except ValueError:
+            uid =  DashboardPath40UID.generate(charm_name, str(dashboard_path))
         else:
-            logger.debug(
-                "Processed dashboard '%s': kept original uid '%s'", dashboard_path, original_uid
-            )
+            uid = DashboardPath40UID.generate(charm_name, rel_path)
+
+        dashboard_dict["uid"] = uid
+        return True
 
     @classmethod
     def _add_tags(cls, dashboard_dict: dict, charm_name: str):
@@ -994,8 +1075,10 @@ class CharmedDashboard:
             )
 
         dashboard_templates = {}
+        kept_uids = 0
+        replaced_uids = 0
 
-        for path in filter(_is_dashboard, Path(dashboards_path).glob("*")):
+        for path in filter(_is_dashboard, Path(dashboards_path).glob("**/*")):
             try:
                 dashboard_dict = json.loads(path.read_bytes())
             except json.JSONDecodeError as e:
@@ -1005,13 +1088,17 @@ class CharmedDashboard:
                 logger.error(
                     "Invalid dashboard '%s': expected dict, got %s", path, type(dashboard_dict)
                 )
+                continue
 
-            cls._replace_uid(
+            if cls._replace_uid(
                 dashboard_dict=dashboard_dict,
                 dashboard_path=path,
                 charm_dir=charm_dir,
                 charm_name=charm_name,
-            )
+            ):
+                replaced_uids += 1
+            else:
+                kept_uids += 1
 
             cls._add_tags(dashboard_dict=dashboard_dict, charm_name=charm_name)
 
@@ -1024,19 +1111,15 @@ class CharmedDashboard:
                 juju_topology=juju_topology,
             )
 
+        # A single summary instead of one record per dashboard: see `_examples`.
+        logger.debug(
+            "Loaded %d dashboard(s) from '%s': kept %d original uid(s), replaced %d",
+            kept_uids + replaced_uids,
+            dashboards_path,
+            kept_uids,
+            replaced_uids,
+        )
         return dashboard_templates
-
-
-def _type_convert_stored(obj):
-    """Convert Stored* to their appropriate types, recursively."""
-    if isinstance(obj, StoredList):
-        return list(map(_type_convert_stored, obj))
-    if isinstance(obj, StoredDict):
-        rdict = {}  # type: Dict[Any, Any]
-        for k in obj.keys():
-            rdict[k] = _type_convert_stored(obj[k])
-        return rdict
-    return obj
 
 
 class GrafanaDashboardsChanged(EventBase):
@@ -1343,11 +1426,29 @@ class GrafanaDashboardProvider(Object):
 
     def _upset_dashboards_on_relation(self, relation: Relation) -> None:
         """Update the dashboards in the relation data bucket."""
+        new_templates = type_convert_stored(self._stored.dashboard_templates)  # pyright: ignore
+
+        # Check if the templates have actually changed before updating.
+        # This avoids generating a new UUID on every event, which would cause
+        # unnecessary relation-changed events on the consumer side.
+        # See: https://github.com/canonical/opentelemetry-collector-operator/issues/331
+        existing_data_str = relation.data[self._charm.app].get("dashboards", "{}")
+        try:
+            existing_data = json.loads(existing_data_str)
+            existing_templates = existing_data.get("templates", {})
+        except json.JSONDecodeError:
+            existing_templates = {}
+
+        if new_templates == existing_templates:
+            return  # No change in templates, don't update the databag
+
         # It's completely ridiculous to add a UUID, but if we don't have some
-        # pseudo-random value, this never makes it across 'juju set-state'
+        # pseudo-random value, this never makes it across 'juju set-state'.
+        # Use a deterministic hash of the templates so the value is stable when
+        # templates haven't changed, avoiding spurious relation-changed events.
         stored_data = {
-            "templates": _type_convert_stored(self._stored.dashboard_templates),  # pyright: ignore
-            "uuid": str(uuid.uuid4()),
+            "templates": new_templates,
+            "uuid": _data_hash(new_templates),
         }
 
         relation.data[self._charm.app]["dashboards"] = json.dumps(stored_data)
@@ -1416,7 +1517,11 @@ class GrafanaDashboardConsumer(Object):
         super().__init__(charm, relation_name)
         self._charm = charm
         self._relation_name = relation_name
-        self._transformer = CosTool(self._charm)
+        # A default query type is required here: cosl's `CosTool` only accepts the query
+        # type via the per-method `query_type` kwarg, but `_modify_panel` passes it
+        # positionally (per-panel, promql or logql), which the `ensure_querytype` guard
+        # does not see. "promql" is just a placeholder to satisfy that guard.
+        self._transformer = CosTool("promql")
 
         self._stored.set_default(dashboards={})  # type: ignore
 
@@ -1442,10 +1547,13 @@ class GrafanaDashboardConsumer(Object):
 
         Returns: a list of known dashboards coming from the provided relation instance.
         """
-        return [
-            self._to_external_object(relation_id, dashboard)
+        missing_version: List[str] = []
+        dashboards = [
+            self._to_external_object(relation_id, dashboard, missing_version)
             for dashboard in self._get_stored_dashboards(relation_id)
         ]
+        self._log_missing_versions(missing_version)
+        return dashboards
 
     def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
         """Handle relation changes in related providers.
@@ -1488,6 +1596,41 @@ class GrafanaDashboardConsumer(Object):
 
             for relation in relations:
                 self._render_dashboards_and_signal_changed(relation)
+
+    def has_invalid_dashboards(self) -> bool:
+        """Check whether any relation reported invalid dashboards.
+
+        Validation errors written to relation app data by this consumer (see
+        :meth:`_render_dashboards_and_signal_changed`) are read back to determine
+        whether the relationship currently carries an invalid dashboard.
+
+        Returns:
+            True if any related dashboard provider reported dashboard validation
+            errors, False otherwise.
+        """
+        if not self._charm.unit.is_leader():
+            return False
+
+        for relation in self._charm.model.relations.get(self._relation_name, []):
+            app_data = relation.data.get(self._charm.app)
+            if not app_data:
+                continue
+
+            event_raw = app_data.get("event", "{}")
+            try:
+                event_data = json.loads(event_raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            if event_data.get("errors"):
+                logger.error(
+                    "Invalid dashboards on relation %s: %s",
+                    relation.id,
+                    event_data["errors"],
+                )
+                return True
+
+        return False
 
     def _on_grafana_dashboard_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Update job config when providers depart.
@@ -1561,7 +1704,11 @@ class GrafanaDashboardConsumer(Object):
             except json.JSONDecodeError as e:
                 error = str(e.msg)
                 logger.warning("Invalid JSON in Grafana dashboard '{}': {}".format(fname, error))
-                continue
+                relation_has_invalid_dashboards = True
+            except (KeyError, TypeError, AttributeError) as e:
+                error = str(e)
+                logger.warning("Invalid Grafana dashboard '{}': {}".format(fname, error))
+                relation_has_invalid_dashboards = True
 
             # Prepend the relation name and ID to the dashboard ID to avoid clashes with
             # multiple relations with apps from the same charm, or having dashboards with
@@ -1609,10 +1756,16 @@ class GrafanaDashboardConsumer(Object):
             # Dropping dashboards for a relation needs to be signalled
             return True
 
+        # Clear any stale validation errors so the charm returns to Active once fixed
+        event_data = json.loads(relation.data[self._charm.app].get("event", "{}"))
+        if event_data.get("errors"):
+            event_data.pop("errors")
+            relation.data[self._charm.app]["event"] = json.dumps(event_data)
+
         stored_data = rendered_dashboards
         currently_stored_data = self._get_stored_dashboards(relation.id)
 
-        coerced_data = _type_convert_stored(currently_stored_data) if currently_stored_data else {}
+        coerced_data = type_convert_stored(currently_stored_data) if currently_stored_data else {}
 
         if not coerced_data == stored_data:
             stored_dashboards = self.get_peer_data("dashboards")
@@ -1638,30 +1791,105 @@ class GrafanaDashboardConsumer(Object):
             self.set_peer_data("dashboards", stored_dashboards)
             self.on.dashboards_changed.emit()  # pyright: ignore
 
-    def _to_external_object(self, relation_id, dashboard):
+    def _to_external_object(self, relation_id, dashboard, missing_version: List[str]):
+        """Convert a stored dashboard into the format returned to the charm.
+
+        Args:
+            relation_id: id of the relation the dashboard came from.
+            dashboard: the stored dashboard.
+            missing_version: dashboards without a valid `.version` are appended to it; the
+                caller logs them once (see `_log_missing_versions`).
+        """
+        decompressed = LZMABase64.decompress(dashboard["content"])
+        as_dict = json.loads(decompressed)
+
+        dashboard_title = as_dict.get("title", "")
+        dashboard_uid = as_dict.get("uid", "")
+
+        try:
+            dashboard_version = int(as_dict["version"])
+        except (KeyError, ValueError):
+            missing_version.append(f"'{dashboard_title}' (uid '{dashboard_uid}')")
+            dashboard_version = 0
+
         return {
             "id": dashboard["original_id"],
             "relation_id": relation_id,
             "charm": dashboard["template"]["charm"],
-            "content": LZMABase64.decompress(dashboard["content"]),
+            "content": decompressed,
+            "dashboard_uid": dashboard_uid,
+            "dashboard_version": dashboard_version,
+            "dashboard_title": dashboard_title,
         }
+
+    @staticmethod
+    def _log_missing_versions(dashboards: List[str]) -> None:
+        if dashboards:
+            logger.warning(
+                "%d dashboard(s) are missing a '.version' field or it is invalid (must be "
+                "integer); using '0' as fallback: %s",
+                len(dashboards),
+                ", ".join(dashboards),
+            )
 
     @property
     def dashboards(self) -> List[Dict]:
         """Get a list of known dashboards across all instances of the monitored relation.
 
+        Filters out dashboards with the same uid, keeping only the one with the highest version.
+        When more than one dashboard have the same uid and version, keep the first one when
+        sorted by (relation_id, content) in reverse lexicographic order (highest relid first).
+
         Returns: a list of known dashboards. The JSON of each of the dashboards is available
             in the `content` field of the corresponding `dict`.
         """
-        dashboards = []
+        d: Dict[str, dict] = {}
+        # Problems are collected and logged once at the end, listing every dashboard: the
+        # cost is one `juju-log` call per record, whatever its length.
+        missing_version: List[str] = []
+        missing_uid: List[str] = []
+        deduplicated: List[str] = []
 
         for _, (relation_id, dashboards_for_relation) in enumerate(
             self.get_peer_data("dashboards").items()
         ):
             for dashboard in dashboards_for_relation:
-                dashboards.append(self._to_external_object(relation_id, dashboard))
+                obj = self._to_external_object(relation_id, dashboard, missing_version)
 
-        return dashboards
+                key = obj.get("dashboard_uid")
+                if key is None or str(key).strip() == "":
+                    # At this point, we assume that a `.uid` is present so we do not render a fallback identifier here. Instead, we omit it.
+                    missing_uid.append(
+                        f"'{obj['dashboard_title']}' (relation id '{obj['relation_id']}')"
+                    )
+                    continue
+
+                if key in d:
+                    d[key] = max(d[key], obj, key=lambda o: (o["dashboard_version"], o["relation_id"], o["content"]))
+                    kept = d[key]
+                    deduplicated.append(
+                        f"'{kept['dashboard_title']}' (uid '{kept['dashboard_uid']}'): kept "
+                        f"version '{kept['dashboard_version']}' from relation id "
+                        f"'{kept['relation_id']}'"
+                    )
+                else:
+                    d[key] = obj
+
+        self._log_missing_versions(missing_version)
+        if missing_uid:
+            logger.error(
+                "%d dashboard(s) are missing a '.uid' field; omitted: %s",
+                len(missing_uid),
+                ", ".join(missing_uid),
+            )
+        if deduplicated:
+            logger.warning(
+                "deduplicated %d dashboard(s) sharing a uid: %s",
+                len(deduplicated),
+                ", ".join(deduplicated),
+            )
+
+        return list(d.values())
 
     def _get_stored_dashboards(self, relation_id: int) -> list:
         """Pull stored dashboards out of the peer data bucket."""
@@ -1680,7 +1908,7 @@ class GrafanaDashboardConsumer(Object):
         if not peers or not peers.data:
             logger.info("set_peer_data: no peer relation. Is the charm being installed/removed?")
             return
-        peers.data[self._charm.app][key] = json.dumps(data)  # type: ignore[attr-defined]
+        peers.data[self._charm.app][key] = json.dumps(data, sort_keys=True)  # type: ignore[attr-defined]
 
     def get_peer_data(self, key: str) -> Any:
         """Retrieve information from the peer data bucket instead of `StoredState`."""
@@ -1794,19 +2022,35 @@ class GrafanaDashboardAggregator(Object):
 
     def _update_remote_grafana(self, _: Optional[RelationEvent] = None) -> None:
         """Push dashboards to the downstream Grafana relation."""
-        # It's still ridiculous to add a UUID here, but needed
-        stored_data = {
-            "templates": _type_convert_stored(self._stored.dashboard_templates),  # pyright: ignore
-            "uuid": str(uuid.uuid4()),
-        }
+        new_templates = type_convert_stored(self._stored.dashboard_templates)  # pyright: ignore
 
         if self._charm.unit.is_leader():
             for grafana_relation in self.model.relations[self._grafana_relation]:
+                # Check if the templates have actually changed before updating.
+                # This avoids generating a new UUID on every event, which would cause
+                # unnecessary relation-changed events on the consumer side.
+                existing_data_str = grafana_relation.data[self._charm.app].get("dashboards", "{}")
+                try:
+                    existing_data = json.loads(existing_data_str)
+                    existing_templates = existing_data.get("templates", {})
+                except json.JSONDecodeError:
+                    existing_templates = {}
+
+                if new_templates == existing_templates:
+                    continue  # No change in templates, don't update the databag
+
+                # It's still ridiculous to add a UUID here, but needed.
+                # Use a deterministic hash of the templates so the value is stable when
+                # templates haven't changed, avoiding spurious relation-changed events.
+                stored_data = {
+                    "templates": new_templates,
+                    "uuid": _data_hash(new_templates),
+                }
                 grafana_relation.data[self._charm.app]["dashboards"] = json.dumps(stored_data)
 
     def remove_dashboards(self, event: RelationBrokenEvent) -> None:
         """Remove a dashboard if the relation is broken."""
-        app_ids = _type_convert_stored(self._stored.id_mappings.get(event.app.name, ""))  # type: ignore
+        app_ids = type_convert_stored(self._stored.id_mappings.get(event.app.name, ""))  # type: ignore
 
         if not app_ids:
             logger.info("Could not look up stored dashboards for %s", event.app.name)  # type: ignore
@@ -1816,9 +2060,10 @@ class GrafanaDashboardAggregator(Object):
         for id in app_ids:
             del self._stored.dashboard_templates[id]  # type: ignore
 
+        remaining_templates = type_convert_stored(self._stored.dashboard_templates)  # pyright: ignore
         stored_data = {
-            "templates": _type_convert_stored(self._stored.dashboard_templates),  # pyright: ignore
-            "uuid": str(uuid.uuid4()),
+            "templates": remaining_templates,
+            "uuid": _data_hash(remaining_templates),
         }
 
         if self._charm.unit.is_leader():
@@ -1868,7 +2113,8 @@ class GrafanaDashboardAggregator(Object):
                 if dash_mutable:
                     dash = dash_mutable
         except KeyError:
-            logger.debug("No existing templating data in dashboard")
+            # No existing templating data: `_handle_reactive_dashboards` logs a summary
+            pass
 
         if "__inputs" in dash:
             inputs = dash
@@ -1908,6 +2154,7 @@ class GrafanaDashboardAggregator(Object):
             return {}
 
         dashboards = {}
+        without_templating = 0
         for t in templates:
             # This seems ridiculous, too, but to get it from a "dashboards" key in serialized JSON
             # in the bucket back out to the actual "dashboard" we _need_, this is the way
@@ -1919,6 +2166,9 @@ class GrafanaDashboardAggregator(Object):
             # Apparently SOME newer dashboards (such as Ceph) do not have this double nesting, so
             # now we get to account for both :toot:
             dash = t.get("dashboard", {}) or t
+
+            if "templating" not in dash:
+                without_templating += 1
 
             # Replace values with LMA-style templating
             dash = self._strip_existing_datasources(dash)
@@ -1953,6 +2203,10 @@ class GrafanaDashboardAggregator(Object):
             id = "prog:{}".format(content[-24:-16])
 
             dashboards[id] = content
+
+        if without_templating:
+            # A single summary instead of one record per dashboard: see `_examples`.
+            logger.debug("No existing templating data in %d dashboard(s)", without_templating)
         return {**builtins, **dashboards}
 
     def _maybe_get_builtin_dashboards(self, event: RelationEvent) -> Dict:
@@ -1998,125 +2252,3 @@ class GrafanaDashboardAggregator(Object):
             "application": event.app.name,  # type: ignore
             "unit": event.unit.name,  # type: ignore
         }
-
-
-class CosTool:
-    """Uses cos-tool to inject label matchers into alert rule expressions and validate rules."""
-
-    _path = None
-    _disabled = False
-
-    def __init__(self, charm):
-        self._charm = charm
-
-    @property
-    def path(self):
-        """Lazy lookup of the path of cos-tool."""
-        if self._disabled:
-            return None
-        if not self._path:
-            self._path = self._get_tool_path()
-            if not self._path:
-                logger.debug("Skipping injection of juju topology as label matchers")
-                self._disabled = True
-        return self._path
-
-    def apply_label_matchers(self, rules: dict, type: str) -> dict:
-        """Will apply label matchers to the expression of all alerts in all supplied groups."""
-        if not self.path:
-            return rules
-        for group in rules["groups"]:
-            rules_in_group = group.get("rules", [])
-            for rule in rules_in_group:
-                topology = {}
-                # if the user for some reason has provided juju_unit, we'll need to honor it
-                # in most cases, however, this will be empty
-                for label in [
-                    "juju_model",
-                    "juju_model_uuid",
-                    "juju_application",
-                    "juju_charm",
-                    "juju_unit",
-                ]:
-                    if label in rule["labels"]:
-                        topology[label] = rule["labels"][label]
-
-                rule["expr"] = self.inject_label_matchers(rule["expr"], topology, type)
-        return rules
-
-    def validate_alert_rules(self, rules: dict) -> Tuple[bool, str]:
-        """Will validate correctness of alert rules, returning a boolean and any errors."""
-        if not self.path:
-            logger.debug("`cos-tool` unavailable. Not validating alert correctness.")
-            return True, ""
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            rule_path = Path(tmpdir + "/validate_rule.yaml")
-
-            # Smash "our" rules format into what upstream actually uses, which is more like:
-            #
-            # groups:
-            #   - name: foo
-            #     rules:
-            #       - alert: SomeAlert
-            #         expr: up
-            #       - alert: OtherAlert
-            #         expr: up
-            transformed_rules = {"groups": []}  # type: ignore
-            for rule in rules["groups"]:
-                transformed = {"name": str(uuid.uuid4()), "rules": [rule]}
-                transformed_rules["groups"].append(transformed)
-
-            rule_path.write_text(yaml.dump(transformed_rules))
-
-            args = [str(self.path), "validate", str(rule_path)]
-            # noinspection PyBroadException
-            try:
-                self._exec(args)
-                return True, ""
-            except subprocess.CalledProcessError as e:
-                logger.debug("Validating the rules failed: %s", e.output)
-                return False, ", ".join([line for line in e.output if "error validating" in line])
-
-    def inject_label_matchers(self, expression: str, topology: dict, type: str) -> str:
-        """Add label matchers to an expression."""
-        if not topology:
-            return expression
-        if not self.path:
-            logger.debug("`cos-tool` unavailable. Leaving expression unchanged: %s", expression)
-            return expression
-        args = [str(self.path), "--format", type, "transform"]
-
-        variable_topology = {k: "${}".format(k) for k in topology.keys()}
-        args.extend(
-            [
-                "--label-matcher={}={}".format(key, value)
-                for key, value in variable_topology.items()
-            ]
-        )
-
-        # Pass a leading "--" so expressions with a negation or subtraction aren't interpreted as
-        # flags
-        args.extend(["--", "{}".format(expression)])
-        # noinspection PyBroadException
-        try:
-            return re.sub(r'="\$juju', r'=~"$juju', self._exec(args))
-        except subprocess.CalledProcessError as e:
-            logger.debug('Applying the expression failed: "%s", falling back to the original', e)
-            return expression
-
-    def _get_tool_path(self) -> Optional[Path]:
-        arch = platform.machine()
-        arch = "amd64" if arch == "x86_64" else arch
-        res = "cos-tool-{}".format(arch)
-        try:
-            path = Path(res).resolve(strict=True)
-            return path
-        except (FileNotFoundError, OSError):
-            logger.debug('Could not locate cos-tool at: "{}"'.format(res))
-        return None
-
-    def _exec(self, cmd) -> str:
-        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE)
-        output = result.stdout.decode("utf-8").strip()
-        return output
