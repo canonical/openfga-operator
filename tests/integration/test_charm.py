@@ -41,6 +41,7 @@ def test_build_and_deploy(
         app=DB_APP,
         channel="14/stable",
         trust=True,
+        force=True,
     )
 
     juju.deploy(
