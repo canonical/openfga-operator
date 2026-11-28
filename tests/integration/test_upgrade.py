@@ -38,6 +38,7 @@ class TestOpenFGAUpgrade:
             app=self.postgresql_app_name,
             channel="14/stable",
             trust=True,
+            force=True,
         )
 
         juju.deploy(
